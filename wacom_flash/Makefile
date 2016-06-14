@@ -1,7 +1,7 @@
 WACOMTOOLSRC = wacom_flash.c
 PROGNAME = wacom_flash
-STATIC_BUILD ?= y
-ifeq ($(STATIC_BUILD),n)
+STATIC_BUILD ?= n
+ifeq ($(STATIC_BUILD),y)
 	LDFLAGS += -static
 endif
 
