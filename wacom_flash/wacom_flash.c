@@ -95,6 +95,8 @@ int read_hex(FILE *fp, char *file_name, unsigned char *flash_data, size_t data_s
 	  
 		  for (i = 0; i < byte_count; i++){
 			  fscanf(fp, "%2lX", &data);
+
+
 			  count += 2;
 			  total += data;
 	    
@@ -908,24 +910,6 @@ void show_hid_descriptor(HID_DESC hid_descriptor)
 	       hid_descriptor.RESERVED_LOW);
 }
 
-int get_fwver_from_filename(char *file_name)
-{
-	unsigned int fw_ver = 0;
-	int i, ret = -1;
-	char *str;
-
-	str = strtok(file_name, "_.");
-	str = strtok(NULL, "_.");
-
-	if (str == NULL)
-		ret = -EXIT_FAIL;
-	else
-		sscanf(str, "%x", &ret);
-
-	return ret;
-}
-
-
 int wacom_gather_info(int fd, int *fw_ver)
 {
 	struct i2c_rdwr_ioctl_data packets;
@@ -1019,17 +1003,16 @@ int find_wacom_i2cdev(int *current_fw_ver)
 
 }
 
-int compare_fw_version(int fd, char *fw_file_name, int *new_fw_ver, int current_fw_ver)
+int compare_fw_version(int fd, char *fw_file_name, int new_fw_ver, int current_fw_ver)
 {
 	int ret = -1;
 
-	*new_fw_ver = get_fwver_from_filename(fw_file_name);
-	printf("new: %d current: %d \n", *new_fw_ver, current_fw_ver);
+	printf("new: %d current: %d \n", new_fw_ver, current_fw_ver);
 
-	if (*new_fw_ver < 0 || current_fw_ver <0)
+	if (new_fw_ver < 0 || current_fw_ver <0)
 		return -EXIT_FAIL;
 
-	return (*new_fw_ver == current_fw_ver ? 1 : 0);
+	return (new_fw_ver == current_fw_ver ? 1 : 0);
 }
 
 /*********************************************************************************************************/
@@ -1072,7 +1055,6 @@ int main(int argc, char *argv[])
 	if (argc == 3 && !strcmp(argv[2], "-v")) {
 		printf("Conducting only version check\n");
 		only_ver_check = true;
-		goto only_version_check;
 	}
 
 	/****************************************/
@@ -1092,7 +1074,10 @@ int main(int argc, char *argv[])
 	}
 	fclose(fp);
 
- only_version_check:
+	new_fw_ver = (int)(flash_data[DATA_SIZE - 1] << 8) | (int)flash_data[DATA_SIZE -2];
+	printf("new: %x\n", new_fw_ver);
+
+
 	/****************************************/
 	/*Opening and setting file descriptor   */
 	/****************************************/
@@ -1106,7 +1091,7 @@ int main(int argc, char *argv[])
 	/*Check firmware version before flashing*/
 	/****************************************/
 	printf("\n1:######################\n");
-	ret = compare_fw_version(fd, file_name, &new_fw_ver, current_fw_ver);
+	ret = compare_fw_version(fd, file_name, new_fw_ver, current_fw_ver);
 	if (ret || ret < 0) {
 		fprintf(stderr, "Fw version check failed. Aborting the flash\n");
 		ret = -EXIT_FAIL_FWCMP;
