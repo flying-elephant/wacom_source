@@ -7,6 +7,8 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <time.h>
+#include <syslog.h>
+
 #include <sys/stat.h>
 #include <sys/types.h>
 #include "i2c-dev.h"
@@ -98,6 +100,9 @@
 #define WACOM_CMD_THROW0	0x05
 #define WACOM_CMD_THROW1	0x00
 
+/*Chrome OS specific flag*/
+#define FLAGS_RECOVERY "0"
+
 //
 // exit codes
 //
@@ -148,7 +153,7 @@
 #define ERR                                     (44)
 #define ERR_WRITE                               (45)
 #define EXIT_FAIL_FWCMP                         (46)
-#define EXIT_NOTSAME_FIRMWARE                   (47)
+#define EXIT_SAME_FIRMWARE                   (47)
 #define EXIT_NOFILE                             (48)
 
 

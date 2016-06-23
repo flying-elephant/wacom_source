@@ -892,7 +892,7 @@ int wacom_i2c_flash(int fd, unsigned char *flash_data)
 /*********************************************************************************************************/
 void show_hid_descriptor(HID_DESC hid_descriptor)
 {
-	printf("%d 0x%x 0x%x %d %d \n %d %d %d %d %d \n 0x%x 0x%x 0x%x %d %d\n",
+	syslog(LOG_INFO, "%d 0x%x 0x%x %d %d \n %d %d %d %d %d \n 0x%x 0x%x 0x%x %d %d\n",
 	       hid_descriptor.wHIDDescLength,
 	       hid_descriptor.bcdVersion,
 	       hid_descriptor.wReportDescLength,
@@ -936,7 +936,7 @@ int wacom_gather_info(int fd, int *fw_ver)
 	packets.msgs  = msgs;
 	packets.nmsgs = 2;
 	if (ioctl(fd, I2C_RDWR, &packets) < 0) {
-		fprintf(stderr, "%s failed to send messages\n", __func__);
+		syslog(LOG_WARNING, "%s failed to send messages\n", __func__);
 		return -EXIT_FAIL;
 	}
 
@@ -946,8 +946,9 @@ int wacom_gather_info(int fd, int *fw_ver)
 		goto out;
 	}
 
-	*fw_ver = hid_descriptor.wVersion;
-	printf("Vendor ID: %x\n", hid_descriptor.wVendorID);
+	*fw_ver = (int)hid_descriptor.wVersion;
+	syslog(LOG_INFO, "Wacom device found:\n Vendor ID: %x obtained fw_ver:%x \n", 
+	       hid_descriptor.wVendorID, *fw_ver);
 	ret = 0;
 
  out:
@@ -964,7 +965,7 @@ int find_wacom_i2cdev(int *current_fw_ver)
 
 	device_num = calloc(str_size, sizeof(char));
 	if (device_num == NULL) {
-		fprintf(stderr, "cannot allocate memory\n");
+		syslog(LOG_WARNING, "cannot allocate memory\n");
 		return -ENOMEM;
 	}
 
@@ -973,7 +974,7 @@ int find_wacom_i2cdev(int *current_fw_ver)
 
 		fd = open(device_num, O_RDWR);
 		if (fd < 0) {
-			fprintf(stderr, "cannot open %s \n", device_num);
+			syslog(LOG_WARNING, "cannot open %s \n", device_num);
 			ret = -EXIT_FAIL;
 			i++;
 			continue;
@@ -983,7 +984,7 @@ int find_wacom_i2cdev(int *current_fw_ver)
 		ret = ioctl(fd, I2C_SLAVE_FORCE, I2C_TARGET);
 		if (ret) {
 			ret = -ret;
-			fprintf(stderr, "Falied to set the slave address: %d \n", I2C_TARGET);
+			syslog(LOG_WARNING, "Falied to set the slave address: %d \n", I2C_TARGET);
 			close(fd);
 		}
 
@@ -1007,7 +1008,7 @@ int compare_fw_version(int fd, char *fw_file_name, int new_fw_ver, int current_f
 {
 	int ret = -1;
 
-	printf("new: %d current: %d \n", new_fw_ver, current_fw_ver);
+	//syslog(LOG_INFO, "new: %d current: %d \n", new_fw_ver, current_fw_ver);
 
 	if (new_fw_ver < 0 || current_fw_ver <0)
 		return -EXIT_FAIL;
@@ -1029,11 +1030,14 @@ int main(int argc, char *argv[])
 
 	unsigned char flash_data[DATA_SIZE];
 	bool only_ver_check = false;
+	bool force_flash = false;
 	int i, ret = -1, fd = -1;
 	int count = 0, cnt = 0;
 	int current_fw_ver = -1;
 	int new_fw_ver = -1;
 	int updated_fw_ver = -1;
+
+	openlog("Wacom_Flash", LOG_CONS | LOG_PID, LOG_USER);
 
 	/**************************************/
 	/**************************************/
@@ -1041,20 +1045,25 @@ int main(int argc, char *argv[])
 	/**************************************/
 	/**************************************/
 	file_name = argv[1];
-	printf("Hex file name: %s \n", file_name);
+	syslog(LOG_INFO, "Hex file name: %s \n", file_name);
 	
 	for (i = 0; i < DATA_SIZE; i++)
 		flash_data[i] = 0xff;
 	
 	if (argc == 1 || argc > 3){
-		printf("Usage: $wac_flash [target file name] \n");
-		printf("Ex: $wac_flash W9013_056.hex \n");
+		syslog(LOG_INFO, "Usage: $wac_flash [target file name] \n");
+		syslog(LOG_INFO, "Ex: $wac_flash W9013_056.hex \n");
 		return -EXIT_NOFILE;
 	}
 
 	if (argc == 3 && !strcmp(argv[2], "-v")) {
-		printf("Conducting only version check\n");
+		syslog(LOG_INFO, "Conducting only version check\n");
 		only_ver_check = true;
+	} else if (argc == 3 && !strcmp(argv[2], FLAGS_RECOVERY)) {
+		syslog(LOG_INFO, "Force flash set\n");
+		force_flash = true;
+	} else if (argc == 3) {
+		syslog(LOG_INFO, "Option is not valid; ignored\n");
 	}
 
 	/****************************************/
@@ -1062,71 +1071,85 @@ int main(int argc, char *argv[])
 	/****************************************/	
 	fp = fopen(argv[1], "rb");
 	if (fp == NULL) {
-		printf("the file name is invalid or does not exist\n");
+		syslog(LOG_WARNING, "the file name is invalid or does not exist\n");
 		return -1;
 	}
 	
 	cnt = read_hex(fp, file_name, flash_data, DATA_SIZE, &maxAddr);
 	if (cnt == HEX_READ_ERR) {
-		printf("reading the hex file failed\n");
+		syslog(LOG_WARNING, "reading the hex file failed\n");
 		fclose(fp);
 		return -1;
 	}
 	fclose(fp);
 
 	new_fw_ver = (int)(flash_data[DATA_SIZE - 1] << 8) | (int)flash_data[DATA_SIZE -2];
-	printf("new: %x\n", new_fw_ver);
-
 
 	/****************************************/
 	/*Opening and setting file descriptor   */
 	/****************************************/
 	fd = find_wacom_i2cdev(&current_fw_ver);
 	if (fd < 0) {
-		fprintf(stderr, "cannot find Wacom i2c device\n");
+		syslog(LOG_WARNING, "cannot find Wacom i2c device\n");
 		goto err;
 	}
 
+	if (force_flash) {
+		syslog(LOG_INFO, "No firmware check; now starting to flash");
+		goto firmware_flash;
+	}
 	/****************************************/
 	/*Check firmware version before flashing*/
 	/****************************************/
 	printf("\n1:######################\n");
+	syslog(LOG_INFO, "-------------------- \n");
+	syslog(LOG_INFO, "Active firmware: %x \n", current_fw_ver);
+	syslog(LOG_INFO, "Firmware on disk: %x \n", new_fw_ver);
 	ret = compare_fw_version(fd, file_name, new_fw_ver, current_fw_ver);
 	if (ret || ret < 0) {
-		fprintf(stderr, "Fw version check failed. Aborting the flash\n");
+		syslog(LOG_WARNING, "Fw version check failed. Aborting the flash\n");
 		ret = -EXIT_FAIL_FWCMP;
 		goto err;
 	} else if (only_ver_check) {
-		ret = EXIT_NOTSAME_FIRMWARE;
+		ret = EXIT_SAME_FIRMWARE;
 		goto err;
 	}
 
+ firmware_flash:
 	/****************************************/
 	/*From here prepares for flash operation*/
 	/****************************************/
 	printf("\n2:######################\n");	
 	ret =  wacom_i2c_flash(fd, flash_data);
 	if (ret < 0) {
-		fprintf(stderr, "%s failed to flash firmware\n", __func__);
+		syslog(LOG_WARNING, "%s failed to flash firmware\n", __func__);
 		ret = -EXIT_FAIL;
 		goto err;
 	}
 	
+	msleep(200);
+
 	printf("\n3:######################\n");
 	if (wacom_gather_info(fd, &updated_fw_ver) < 0) {
-		fprintf(stderr, "cannot get updated information\n");
+		syslog(LOG_WARNING, "cannot get updated information \n");
 		goto err;
 	}
 
-	if (updated_fw_ver == new_fw_ver)
-		printf("%s flash completed updated ver: %x\n", __func__, updated_fw_ver);
-	else
-		fprintf(stderr, 
-			"firmwrae version does not match;\n fw_file_ver: %d current_fw_ver: %d\n",
+	if (updated_fw_ver == new_fw_ver) {
+		syslog(LOG_INFO, "Firmware update successfully finished \n");
+	} else {
+		syslog(LOG_WARNING, "firmwrae version does not match;\n fw_file_ver: %d current_fw_ver: %d\n",
 			new_fw_ver, updated_fw_ver);
+	}
+
+	syslog(LOG_INFO, "-------------------- \n");
+	syslog(LOG_INFO, "Firmware on disc: %x \n", new_fw_ver);
+	syslog(LOG_INFO, "Flushed firmware : %x \n", updated_fw_ver);
+
  err:
 	if (fd >= 0)
 		close(fd);
+	closelog();
 
 	return ret;
 }
