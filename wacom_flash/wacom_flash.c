@@ -1,35 +1,26 @@
 #include "wacom_flash.h"
 
 /*hex file read for 35D, 35G, and W9002*/
-int read_hex(FILE *fp, char *file_name, unsigned char *flash_data, size_t data_size, unsigned long *max_address)
+int read_hex(FILE *fp, unsigned char *flash_data, size_t data_size, unsigned long *max_address)
 {
   int s;
   int ret;
   int fd = -1;
-  struct stat *stat = NULL;
   unsigned long expand_address = 0;
   unsigned long startLinearAddress = 0;
   unsigned long count = 0;
   unsigned long file_size = 0;  
+  struct stat stat;
 
-  fd = open(file_name, O_RDWR);
-
-  stat = malloc(sizeof(struct stat));
-  if (stat == NULL) {
-	  printf("Error \n");
-  }
-
-
-  ret = fstat(fd, stat);
+  fd = fileno(fp);
+  ret = fstat(fd, &stat);
   if (ret < 0) {
 	  printf("Cannot obtain stat \n");
 	  return HEX_READ_ERR;
   }
 
-  file_size = stat->st_size;
+  file_size = stat.st_size;
   printf("File size : %lu \n", file_size);
-  free(stat);
-  close(fd);
 
   while (!feof(fp)) {
 	  s = fgetc(fp);
@@ -982,10 +973,10 @@ int find_wacom_i2cdev(int *current_fw_ver)
 	
 		/*If I2C_SLAVE makes "Segmentation fault" or the error, use I2C_SLAVE_FORCE instead*/
 		ret = ioctl(fd, I2C_SLAVE_FORCE, I2C_TARGET);
-		if (ret) {
-			ret = -ret;
+		if (ret < 0) {
 			syslog(LOG_WARNING, "Falied to set the slave address: %d \n", I2C_TARGET);
 			close(fd);
+			continue;
 		}
 
 		ret = wacom_gather_info(fd, current_fw_ver);
@@ -1044,12 +1035,6 @@ int main(int argc, char *argv[])
 	/*From here starts reading hex file****/
 	/**************************************/
 	/**************************************/
-	file_name = argv[1];
-	syslog(LOG_INFO, "Hex file name: %s \n", file_name);
-	
-	for (i = 0; i < DATA_SIZE; i++)
-		flash_data[i] = 0xff;
-	
 	if (argc == 1 || argc > 3){
 		syslog(LOG_INFO, "Usage: $wac_flash [target file name] \n");
 		syslog(LOG_INFO, "Ex: $wac_flash W9013_056.hex \n");
@@ -1068,14 +1053,18 @@ int main(int argc, char *argv[])
 
 	/****************************************/
 	/*Hex file parsing                      */
-	/****************************************/	
+	/****************************************/
+	file_name = argv[1];
+	syslog(LOG_INFO, "Hex file name: %s \n", file_name);
+
+	memset(flash_data, 0xff, DATA_SIZE);	
 	fp = fopen(argv[1], "rb");
 	if (fp == NULL) {
 		syslog(LOG_WARNING, "the file name is invalid or does not exist\n");
 		return -1;
 	}
 	
-	cnt = read_hex(fp, file_name, flash_data, DATA_SIZE, &maxAddr);
+	cnt = read_hex(fp, flash_data, DATA_SIZE, &maxAddr);
 	if (cnt == HEX_READ_ERR) {
 		syslog(LOG_WARNING, "reading the hex file failed\n");
 		fclose(fp);
