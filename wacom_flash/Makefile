@@ -5,7 +5,8 @@ ifeq ($(STATIC_BUILD),y)
 	LDFLAGS += -static
 endif
 
-all:
+all: $(PROGNAME)
+$(PROGNAME): $(WACOMTOOLSRC)
 	$(CC) $(CFLAGS) $(LDFLAGS) $(WACOMTOOLSRC) $(WACOMTOOLOBJ) -o $(PROGNAME)
 
 clean:
