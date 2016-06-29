@@ -7,14 +7,26 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <time.h>
-#include <syslog.h>
 
 #include <sys/stat.h>
 #include <sys/types.h>
 #include "i2c-dev.h"
 
+#define R11_TEST
+
 #define msleep(time)({usleep(time * 1000);})
 
+#ifdef R11_TEST
+#define WACOM_VENDOR1           0x531
+#define WACOM_VENDOR2           0x2d1f
+#define WACOM_FW_BASE           0x400
+#define MAX_POLL_DEV            20
+#define NUM_OF_RETRY            5
+
+#define I2C_DEVICE              "/dev/i2c-"
+#define I2C_TARGET              0x10
+
+#else
 #define WACOM_VENDOR1           0x56a
 #define WACOM_VENDOR2           0x2d1f
 #define MAX_POLL_DEV            20
@@ -22,6 +34,8 @@
 
 #define I2C_DEVICE              "/dev/i2c-"
 #define I2C_TARGET              0x09
+
+#endif
 
 #define DATA_SIZE               (65536 * 2)
 #define HEX_READ_ERR            -1
@@ -101,7 +115,8 @@
 #define WACOM_CMD_THROW1	0x00
 
 /*Chrome OS specific flag*/
-#define FLAGS_RECOVERY "0"
+#define FLAGS_RECOVERY_TRUE "0"
+#define FLAGS_RECOVERY_FALSE "1"
 
 //
 // exit codes
@@ -153,9 +168,9 @@
 #define ERR                                     (44)
 #define ERR_WRITE                               (45)
 #define EXIT_FAIL_FWCMP                         (46)
-#define EXIT_SAME_FIRMWARE                   (47)
+#define EXIT_VERSION_CHECK                      (47)
 #define EXIT_NOFILE                             (48)
-
+#define EXIT_NOSUCH_OPTION                      (49)
 
 #define HID_DESC_REGISTER 1
 
