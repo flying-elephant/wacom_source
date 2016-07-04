@@ -27,6 +27,8 @@
 #else
 #define WACOM_VENDOR1           0x56a
 #define WACOM_VENDOR2           0x2d1f
+#define WACOM_FW_SMBASE         0x400
+#define WACOM_FW_BASE           WACOM_FW_SMBASE
 #define MAX_POLL_DEV            20
 #define NUM_OF_RETRY            5
 
