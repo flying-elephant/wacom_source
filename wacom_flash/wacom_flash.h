@@ -12,8 +12,6 @@
 #include <sys/types.h>
 #include "i2c-dev.h"
 
-#define R11_TEST
-
 #define msleep(time)({usleep(time * 1000);})
 
 #ifdef R11_TEST
