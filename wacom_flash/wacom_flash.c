@@ -20,7 +20,6 @@ int read_hex(FILE *fp, unsigned char *flash_data, size_t data_size, unsigned lon
   }
 
   file_size = stat.st_size;
-  // printf("File size : %lu \n", file_size);
 
   while (!feof(fp)) {
 	  s = fgetc(fp);
@@ -54,10 +53,8 @@ int read_hex(FILE *fp, unsigned char *flash_data, size_t data_size, unsigned lon
 	  count++;
 
 	  if (s != ':') {
-		  if (s == ASCII_EOF) {
-			  //printf("Reaching to EOF \n");
+		  if (s == ASCII_EOF)
 			  return count;
-		  }
 
 		  printf("HEX_READ_ERR 3 \n ");
 		  return HEX_READ_ERR; /* header error */
@@ -676,7 +673,7 @@ bool flash_erase_w9013(int fd, int *eraseBlock, int num)
 bool flash_write_block_w9013(int fd, char *flash_data, 
 				    unsigned long ulAddress, u8 *pcommand_id, int *ECH)
 {
-	const int MAX_COM_SIZE = (8 + FLASH_BLOCK_SIZE + 2); //8: num of command[0] to command[7]
+	const int MAX_COM_SIZE = (8 + FLASH_BLOCK_SIZE + 2);  //8: num of command[0] to command[7]
                                                               //FLASH_BLOCK_SIZE: unit to erase the block
                                                               //Num of Last 2 checksums
 	bool bRet = false;
@@ -730,7 +727,6 @@ bool flash_write_w9013(int fd, unsigned char *flash_data,
 	int i, j, ECH = 0, ECH_len = 0;
 	int ECH_ARRAY[3];
 	unsigned long ulAddress;
-	
 
 	j = 0;
 	for (ulAddress = start_address; ulAddress < *max_address; ulAddress += FLASH_BLOCK_SIZE) {
@@ -879,7 +875,6 @@ int wacom_i2c_flash(int fd, unsigned char *flash_data)
 	return ret;
 }
 
-
 /*********************************************************************************************************/
 void show_hid_descriptor(HID_DESC hid_descriptor)
 {
@@ -928,11 +923,13 @@ int wacom_gather_info(int fd, int *fw_ver)
 	packets.nmsgs = 2;
 	if (ioctl(fd, I2C_RDWR, &packets) < 0) {
 		fprintf(stderr, "%s failed to send messages\n", __func__);
-		return -EXIT_FAIL;
+		ret = -EXIT_FAIL;
+		goto out;
 	}
 
 	if (hid_descriptor.wVendorID != WACOM_VENDOR1 &&
 	    hid_descriptor.wVendorID != WACOM_VENDOR2) {
+		fprintf(stderr, "the vendor ID is not Wacom ID, : %x \n", hid_descriptor.wVendorID);
 		ret = -EXIT_FAIL;
 		goto out;
 	}
@@ -951,7 +948,6 @@ int wacom_gather_info(int fd, int *fw_ver)
 	return ret;
 }
 
-
 int find_wacom_i2cdev(int *current_fw_ver)
 {
 	int fd = -1;
@@ -965,14 +961,11 @@ int find_wacom_i2cdev(int *current_fw_ver)
 		return -ENOMEM;
 	}
 
-	while (i < MAX_POLL_DEV) {
+	for (i = 0; i < MAX_POLL_DEV; i++) {
 		sprintf(device_num, "%s%d", I2C_DEVICE, i);
-
 		fd = open(device_num, O_RDWR);
 		if (fd < 0) {
 			fprintf(stderr, "cannot open %s \n", device_num);
-			ret = -EXIT_FAIL;
-			i++;
 			continue;
 		}
 	
@@ -991,7 +984,6 @@ int find_wacom_i2cdev(int *current_fw_ver)
 		}
 
 		close(fd);
-		i++;
 	}
 
  exit:
@@ -1004,7 +996,7 @@ int compare_fw_version(int fd, char *fw_file_name, int new_fw_ver, int current_f
 {
 	int ret = -1;
 
-	if (new_fw_ver < 0 || current_fw_ver <0)
+	if (new_fw_ver < 0 || current_fw_ver < 0)
 		return -EXIT_FAIL;
 
 	return (new_fw_ver == current_fw_ver ? 1 : 0);
@@ -1050,10 +1042,10 @@ int main(int argc, char *argv[])
 			printf( "Conducting only version check \n");
 			only_ver_check = true;
 		} else if (!strcmp(argv[2], "-a")) {
-			printf( "Returning new firmware version only\n");
+			printf( "Returning active firmware version only\n");
 			active_fw_check = true;
 		} else if (!strcmp(argv[2], "-n")) {
-			printf( "Returning active firmware version only\n");
+			printf( "Returning new firmware version only\n");
 			new_fw_check = true;
 		} else if (!strcmp(argv[2], FLAGS_RECOVERY_TRUE)) {
 			printf( "Force flash set\n");
@@ -1121,6 +1113,8 @@ int main(int argc, char *argv[])
 	/****************************************/
 	/*Check firmware version before flashing*/
 	/****************************************/
+	printf("current_fw: %x new_fw: %x \n", current_fw_ver, new_fw_ver);
+
 	ret = compare_fw_version(fd, file_name, new_fw_ver, current_fw_ver);
 	if (ret || ret < 0) {
 		fprintf(stderr, "Fw version check failed. Aborting the flash\n");
