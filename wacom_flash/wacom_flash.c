@@ -935,7 +935,7 @@ int wacom_gather_info(int fd, int *fw_ver)
 	}
 
 	*fw_ver = (int)hid_descriptor.wVersion;
-	*fw_ver -= WACOM_FW_BASE;
+	*fw_ver &= WACOM_FW_BASE; /*Avoiding to be negative in a byte*/
 
 #ifdef WACOM_DEBUG
 	printf( "Wacom device found:\n Vendor ID: %x obtained fw_ver:%x \n", 
@@ -1068,7 +1068,7 @@ int main(int argc, char *argv[])
 	fp = fopen(argv[1], "rb");
 	if (fp == NULL) {
 		fprintf(stderr, "the file name is invalid or does not exist\n");
-		ret = -EXIT_NO_SUCH_FILE;
+		ret = -EXIT_FAIL;
 		goto exit;
 	}
 	
@@ -1076,13 +1076,17 @@ int main(int argc, char *argv[])
 	if (cnt == HEX_READ_ERR) {
 		fprintf(stderr, "reading the hex file failed\n");
 		fclose(fp);
-		ret = -EXIT_NO_INTEL_HEX;
+
+		if (active_fw_check || new_fw_check)
+			ret = -EXIT_FAIL; //avoid confusion in shell script
+		else
+			ret = -EXIT_NO_INTEL_HEX;
 		goto exit;
 	}
 	fclose(fp);
 
 	new_fw_ver = (int)(flash_data[DATA_SIZE - 1] << 8) | (int)flash_data[DATA_SIZE -2];
-	new_fw_ver -= WACOM_FW_BASE;
+	new_fw_ver &= WACOM_FW_BASE;  /*Avoiding to be negative in a byte*/
 
 	/*Checking if only new firmware version check is requested*/
 	if (new_fw_check) {
