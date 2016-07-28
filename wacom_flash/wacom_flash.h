@@ -14,28 +14,14 @@
 
 #define msleep(time)({usleep(time * 1000);})
 
-#ifdef R11_TEST
-#define WACOM_VENDOR1           0x531
-#define WACOM_VENDOR2           0x2d1f
-#define WACOM_FW_BASE           0x400
-#define MAX_POLL_DEV            20
-#define NUM_OF_RETRY            5
-
-#define I2C_DEVICE              "/dev/i2c-"
-#define I2C_TARGET              0x10
-
-#else
 #define WACOM_VENDOR1           0x56a
 #define WACOM_VENDOR2           0x2d1f
-#define WACOM_FW_SMBASE         0x400
-#define WACOM_FW_BASE           WACOM_FW_SMBASE
+#define WACOM_FW_BASE           0x7f
 #define MAX_POLL_DEV            20
 #define NUM_OF_RETRY            5
 
 #define I2C_DEVICE              "/dev/i2c-"
 #define I2C_TARGET              0x09
-
-#endif
 
 #define DATA_SIZE               (65536 * 2)
 #define HEX_READ_ERR            -1
@@ -122,8 +108,8 @@
 // exit codes
 //
 #define EXIT_OK					(0)
-#define EXIT_REBOOT				(1)
-#define EXIT_FAIL				(2)
+#define EXIT_FAIL				(1)
+#define EXIT_REBOOT				(2)
 #define EXIT_USAGE				(3)
 #define EXIT_NO_SUCH_FILE			(4)
 #define EXIT_NO_INTEL_HEX			(5)
