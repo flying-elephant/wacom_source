@@ -948,46 +948,32 @@ int wacom_gather_info(int fd, int *fw_ver)
 	return ret;
 }
 
-int find_wacom_i2cdev(int *current_fw_ver)
+int get_device(int *current_fw_ver, char *device_num)
 {
 	int fd = -1;
 	int i = 0, ret = -1;
-	size_t str_size = strlen(I2C_DEVICE) + 2;
-	char *device_num;
 
-	device_num = calloc(str_size, sizeof(char));
-	if (device_num == NULL) {
-		fprintf(stderr, "cannot allocate memory\n");
-		return -ENOMEM;
+	fd = open(device_num, O_RDWR);
+	if (fd < 0) {
+		fprintf(stderr, "cannot open %s \n", device_num);
+		goto exit;
 	}
-
-	for (i = 0; i < MAX_POLL_DEV; i++) {
-		sprintf(device_num, "%s%d", I2C_DEVICE, i);
-		fd = open(device_num, O_RDWR);
-		if (fd < 0) {
-			fprintf(stderr, "cannot open %s \n", device_num);
-			continue;
-		}
 	
-		/*If I2C_SLAVE makes "Segmentation fault" or the error, use I2C_SLAVE_FORCE instead*/
-		ret = ioctl(fd, I2C_SLAVE_FORCE, I2C_TARGET);
-		if (ret < 0) {
-			fprintf(stderr, "Falied to set the slave address: %d \n", I2C_TARGET);
-			close(fd);
-			continue;
-		}
-
-		ret = wacom_gather_info(fd, current_fw_ver);
-		if (ret == 0) {
-			ret = fd;
-			goto exit;
-		}
-
-		close(fd);
+	/*If I2C_SLAVE makes "Segmentation fault" or the error, use I2C_SLAVE_FORCE instead*/
+	ret = ioctl(fd, I2C_SLAVE_FORCE, I2C_TARGET);
+	if (ret < 0) {
+		fprintf(stderr, "Falied to set the slave address: %d \n", I2C_TARGET);
+		goto exit;
 	}
 
+	ret = wacom_gather_info(fd, current_fw_ver);
+	if (ret < 0) {
+		fprintf(stderr, "Cannot get device infomation\n");
+		goto exit;
+	}
+
+	ret = fd;
  exit:
-	free(device_num);
 	return ret;
 
 }
@@ -1030,74 +1016,76 @@ int main(int argc, char *argv[])
 	/*From here starts reading hex file****/
 	/**************************************/
 	/**************************************/
-	if (argc == 1 || argc > 3){
-		printf( "Usage: $wac_flash [target file name] \n");
-		printf( "Ex: $wac_flash W9013_056.hex \n");
+	if (argc != 4){
+		printf( "Usage: $wac_flash [target file name] [type] [i2c-device path]\n");
+		printf( "Ex: $wac_flash W9013_056.hex -r i2c-1 \n");
 		ret = -EXIT_NOFILE;
 		goto exit;
 	}
 
-	if (argc == 3) {
-		if (!strcmp(argv[2], "-v")) {
-			printf( "Conducting only version check \n");
-			only_ver_check = true;
-		} else if (!strcmp(argv[2], "-a")) {
-			printf( "Returning active firmware version only\n");
-			active_fw_check = true;
-		} else if (!strcmp(argv[2], "-n")) {
-			printf( "Returning new firmware version only\n");
-			new_fw_check = true;
-		} else if (!strcmp(argv[2], FLAGS_RECOVERY_TRUE)) {
-			printf( "Force flash set\n");
-			force_flash = true;
-		} else if (!strcmp(argv[2], FLAGS_RECOVERY_FALSE)) {
-			printf( "Force flash is NOT set\n");
-		} else {
-			printf("option is not valid \n");
-			ret = -EXIT_NOSUCH_OPTION;
-			goto exit;
-		}
+	if (!strcmp(argv[2], "-v")) {
+		printf( "Conducting only version check \n");
+		only_ver_check = true;
+	} else if (!strcmp(argv[2], "-a")) {
+		printf( "Returning active firmware version only\n");
+		active_fw_check = true;
+	} else if (!strcmp(argv[2], "-n")) {
+		printf( "Returning new firmware version only\n");
+		new_fw_check = true;
+	} else if (!strcmp(argv[2], FLAGS_RECOVERY_TRUE)) {
+		printf( "Force flash set\n");
+		force_flash = true;
+	} else if (!strcmp(argv[2], FLAGS_RECOVERY_FALSE)) {
+		printf( "Force flash is NOT set\n");
+	} else {
+		printf("option is not valid \n");
+		ret = -EXIT_NOSUCH_OPTION;
+		goto exit;
 	}
 
 	/****************************************/
 	/*Hex file parsing                      */
 	/****************************************/
 	file_name = argv[1];
+	sprintf(device_num, "%s%s", "/dev/", argv[3]);
 
-	memset(flash_data, 0xff, DATA_SIZE);	
-	fp = fopen(argv[1], "rb");
-	if (fp == NULL) {
-		fprintf(stderr, "the file name is invalid or does not exist\n");
-		ret = -EXIT_FAIL;
-		goto exit;
-	}
-	
-	cnt = read_hex(fp, flash_data, DATA_SIZE, &maxAddr);
-	if (cnt == HEX_READ_ERR) {
-		fprintf(stderr, "reading the hex file failed\n");
+	/*If active_fw_check is flagged; skip below file-read*/
+	if (!active_fw_check) {
+		memset(flash_data, 0xff, DATA_SIZE);	
+		fp = fopen(argv[1], "rb");
+		if (fp == NULL) {
+			fprintf(stderr, "the file name is invalid or does not exist\n");
+			ret = -EXIT_FAIL;
+			goto exit;
+		}
+
+		cnt = read_hex(fp, flash_data, DATA_SIZE, &maxAddr);
+		if (cnt == HEX_READ_ERR) {
+			fprintf(stderr, "reading the hex file failed\n");
+			fclose(fp);
+			
+			if (new_fw_check)
+				ret = -EXIT_FAIL; //avoid confusion in shell script
+			else
+				ret = -EXIT_NO_INTEL_HEX;
+			goto exit;
+		}
 		fclose(fp);
 
-		if (active_fw_check || new_fw_check)
-			ret = -EXIT_FAIL; //avoid confusion in shell script
-		else
-			ret = -EXIT_NO_INTEL_HEX;
-		goto exit;
-	}
-	fclose(fp);
+		new_fw_ver = (int)(flash_data[DATA_SIZE - 1] << 8) | (int)flash_data[DATA_SIZE -2];
+		new_fw_ver &= WACOM_FW_BASE;  /*Avoiding to be negative in a byte*/
 
-	new_fw_ver = (int)(flash_data[DATA_SIZE - 1] << 8) | (int)flash_data[DATA_SIZE -2];
-	new_fw_ver &= WACOM_FW_BASE;  /*Avoiding to be negative in a byte*/
-
-	/*Checking if only new firmware version check is requested*/
-	if (new_fw_check) {
-		ret = new_fw_ver;
-		goto exit;
+		/*Checking if only new firmware version check is requested*/
+		if (new_fw_check) {
+			ret = new_fw_ver;
+			goto exit;
+		}
 	}
 
 	/****************************************/
 	/*Opening and setting file descriptor   */
 	/****************************************/
-	fd = find_wacom_i2cdev(&current_fw_ver);
+	fd = get_device(&current_fw_ver, device_num);
 	if (fd < 0) {
 		fprintf(stderr, "cannot find Wacom i2c device\n");
 		goto exit;
@@ -1135,7 +1123,7 @@ int main(int argc, char *argv[])
 	/****************************************/
 	printf( "*Flash started...... \n");
 	printf( "Firmware on disc: %x \n", new_fw_ver);
-	printf( "Flushed firmware : %x \n", updated_fw_ver);
+	printf( "Flashed firmware : %x \n", updated_fw_ver);
 	ret =  wacom_i2c_flash(fd, flash_data);
 	if (ret < 0) {
 		fprintf(stderr, "%s failed to flash firmware\n", __func__);
