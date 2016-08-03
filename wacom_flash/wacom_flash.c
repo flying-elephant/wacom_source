@@ -1041,16 +1041,6 @@ int get_device(int *current_fw_ver, char *device_num)
 
 }
 
-int compare_fw_version(int fd, char *fw_file_name, int new_fw_ver, int current_fw_ver)
-{
-	int ret = -1;
-
-	if (new_fw_ver < 0 || current_fw_ver < 0)
-		return -EXIT_FAIL;
-
-	return (new_fw_ver == current_fw_ver ? 1 : 0);
-}
-
 /*********************************************************************************************************/
 int main(int argc, char *argv[])
 {
@@ -1064,9 +1054,7 @@ int main(int argc, char *argv[])
 	bool bRet = false;
 
 	unsigned char flash_data[DATA_SIZE];
-	bool only_ver_check = false;
 	bool active_fw_check = false;
-	bool new_fw_check = false;
 	bool force_flash = false;
 	int i, ret = 0, fd = -1;
 	int count = 0, cnt = 0;
@@ -1086,15 +1074,9 @@ int main(int argc, char *argv[])
 		goto exit;
 	}
 
-	if (!strcmp(argv[2], "-v")) {
-		fprintf(stderr,  "Conducting only version check \n");
-		only_ver_check = true;
-	} else if (!strcmp(argv[2], "-a")) {
+	if (!strcmp(argv[2], "-a")) {
 		fprintf(stderr,  "Returning active firmware version only\n");
 		active_fw_check = true;
-	} else if (!strcmp(argv[2], "-n")) {
-		fprintf(stderr,  "Returning new firmware version only\n");
-		new_fw_check = true;
 	} else if (!strcmp(argv[2], FLAGS_RECOVERY_TRUE)) {
 		fprintf(stderr,  "Force flash set\n");
 		force_flash = true;
@@ -1126,22 +1108,12 @@ int main(int argc, char *argv[])
 		if (cnt == HEX_READ_ERR) {
 			fprintf(stderr, "reading the hex file failed\n");
 			fclose(fp);
-			
-			if (new_fw_check)
-				ret = -EXIT_FAIL; //avoid confusion in shell script
-			else
-				ret = -EXIT_NO_INTEL_HEX;
+			ret = -EXIT_NO_INTEL_HEX;
 			goto exit;
 		}
 		fclose(fp);
 
 		new_fw_ver = (int)(flash_data[DATA_SIZE - 1] << 8) | (int)flash_data[DATA_SIZE -2];
-
-		/*Checking if only new firmware version check is requested*/
-		if (new_fw_check) {
-			printf("%d\n", new_fw_ver);
-			goto exit;
-		}
 	}
 
 	/****************************************/
@@ -1164,28 +1136,12 @@ int main(int argc, char *argv[])
 		goto exit;
 	} 
 
-	/****************************************/
-	/*Check firmware version before flashing*/
-	/****************************************/
-	fprintf(stderr, "current_fw: %x new_fw: %x \n", current_fw_ver, new_fw_ver);
-
-	ret = compare_fw_version(fd, file_name, new_fw_ver, current_fw_ver);
-	if (ret || ret < 0) {
-		fprintf(stderr, "Fw version check failed. Aborting the flash\n");
-		ret = -EXIT_FAIL_FWCMP;
-		goto exit;
-	} else if (only_ver_check) {
-		ret = -EXIT_VERSION_CHECK;
-		goto exit;
-	}
-
  firmware_flash:
 	/****************************************/
 	/*From here prepares for flash operation*/
 	/****************************************/
-	fprintf(stderr,  "*Flash started...... \n");
-	fprintf(stderr,  "Firmware on disc: %x \n", new_fw_ver);
-	fprintf(stderr,  "Flashed firmware : %x \n", updated_fw_ver);
+	fprintf(stderr, "current_fw: %x new_fw: %x \n", current_fw_ver, new_fw_ver);
+	fprintf(stderr, "*Flash started...... \n");
 	ret =  wacom_i2c_flash(fd, flash_data);
 	if (ret < 0) {
 		fprintf(stderr, "%s failed to flash firmware\n", __func__);
@@ -1195,7 +1151,7 @@ int main(int argc, char *argv[])
 	
 	msleep(200);
 
-	if (!only_ver_check && !active_fw_check && !new_fw_check)
+	if (!active_fw_check)
 		fprintf(stderr, "\n3:######################\n");
 	if (wacom_gather_info(fd, &updated_fw_ver) < 0) {
 		fprintf(stderr, "cannot get updated information \n");
@@ -1211,7 +1167,7 @@ int main(int argc, char *argv[])
 
 	fprintf(stderr,  "*Flash finished...... \n");
 	fprintf(stderr,  "Firmware on disc: %x \n", new_fw_ver);
-	fprintf(stderr,  "Flushed firmware : %x \n", updated_fw_ver);
+	fprintf(stderr,  "Flashed firmware : %x \n", updated_fw_ver);
 
  exit:
 	if (fd > 0)
