@@ -49,6 +49,7 @@ int read_hex(FILE *fp, unsigned char *flash_data, size_t data_size, unsigned lon
 	  unsigned long data;
 	  unsigned int total;
 	  unsigned int i;
+	  int ret = -1;
 	  int cr = 0, lf = 0;
 
 	  s = fgetc(fp);
@@ -62,13 +63,26 @@ int read_hex(FILE *fp, unsigned char *flash_data, size_t data_size, unsigned lon
 		  return HEX_READ_ERR; /* header error */
 	  }      
 
-	  fscanf(fp, "%2lX", &byte_count);
+	  ret = fscanf(fp, "%2lX", &byte_count);
+	  if (ret == EOF) {
+		  fprintf(stderr, "fscanf is error or EOF\n");
+		  return HEX_READ_ERR;
+	  }
+
 	  count += 2;
 
-	  fscanf(fp, "%4lX", &address);
+	  ret = fscanf(fp, "%4lX", &address);
+	  if (ret == EOF) {
+		  fprintf(stderr, "fscanf is error or EOF\n");
+		  return HEX_READ_ERR;
+	  }
 	  count += 4;
 
-	  fscanf(fp, "%2lX", &record_type);
+	  ret = fscanf(fp, "%2lX", &record_type);
+	  if (ret == EOF) {
+		  fprintf(stderr, "fscanf is error or EOF\n");
+		  return HEX_READ_ERR;
+	  }
 	  count += 2;
 
 	  switch (record_type) {
@@ -84,8 +98,11 @@ int read_hex(FILE *fp, unsigned char *flash_data, size_t data_size, unsigned lon
 		  }
 	  
 		  for (i = 0; i < byte_count; i++){
-			  fscanf(fp, "%2lX", &data);
-
+			  ret = fscanf(fp, "%2lX", &data);
+			  if (ret == EOF) {
+				  fprintf(stderr, "fscanf is error or EOF\n");
+				  return HEX_READ_ERR;
+			  }
 
 			  count += 2;
 			  total += data;
@@ -95,7 +112,11 @@ int read_hex(FILE *fp, unsigned char *flash_data, size_t data_size, unsigned lon
 			  }
 		  }
 	  
-		  fscanf(fp, "%2lX", &sum);
+		  ret = fscanf(fp, "%2lX", &sum);
+		  if (ret == EOF) {
+			  fprintf(stderr, "fscanf is error or EOF\n");
+			  return HEX_READ_ERR;
+		  }
 		  count += 2;
 	  
 		  total += sum;
@@ -122,7 +143,11 @@ int read_hex(FILE *fp, unsigned char *flash_data, size_t data_size, unsigned lon
 		  total += (unsigned char)(address >> 8);
 		  total += record_type;
 
-		  fscanf(fp, "%2lX", &sum);
+		  ret = fscanf(fp, "%2lX", &sum);
+		  if (ret == EOF) {
+			  fprintf(stderr, "fscanf is error or EOF\n");
+			  return HEX_READ_ERR;
+		  }
 		  count += 2;	
 
 		  total += sum;
@@ -144,7 +169,11 @@ int read_hex(FILE *fp, unsigned char *flash_data, size_t data_size, unsigned lon
 		  
 		  break;
 	  case 2:
-		  fscanf(fp, "%4lX", &expand_address);
+		  ret = fscanf(fp, "%4lX", &expand_address);
+		  if (ret == EOF) {
+			  fprintf(stderr, "fscanf is error or EOF\n");
+			  return HEX_READ_ERR;
+		  }
 		  count += 4;
 
 		  total = byte_count;
@@ -154,7 +183,11 @@ int read_hex(FILE *fp, unsigned char *flash_data, size_t data_size, unsigned lon
 		  total += (unsigned char)(expand_address);
 		  total += (unsigned char)(expand_address >> 8);
 
-		  fscanf(fp, "%2lX", &sum);
+		  ret = fscanf(fp, "%2lX", &sum);
+		  if (ret == EOF) {
+			  fprintf(stderr, "fscanf is error or EOF\n");
+			  return HEX_READ_ERR;
+		  }
 		  count += 2;	
 
 		  total += sum;
@@ -182,10 +215,18 @@ int read_hex(FILE *fp, unsigned char *flash_data, size_t data_size, unsigned lon
 		  {
 			  unsigned long cs=0, ip=0;
 			  
-			  fscanf(fp, "%4lX", &cs);
+			  ret = fscanf(fp, "%4lX", &cs);
+			  if (ret == EOF) {
+				  fprintf(stderr, "fscanf is error or EOF\n");
+				  return HEX_READ_ERR;
+			  }
 			  count += 4;
 
-			  fscanf(fp, "%4lX", &ip);
+			  ret = fscanf(fp, "%4lX", &ip);
+			  if (ret == EOF) {
+				  fprintf(stderr, "fscanf is error or EOF\n");
+				  return HEX_READ_ERR;
+			  }
 			  count += 4;
 
 			  expand_address = (cs << 4) + ip;
@@ -199,7 +240,11 @@ int read_hex(FILE *fp, unsigned char *flash_data, size_t data_size, unsigned lon
 			  total += (unsigned char)(ip);
 			  total += (unsigned char)(ip >> 8);
 
-			  fscanf(fp, "%2lX", &sum);
+			  ret = fscanf(fp, "%2lX", &sum);
+			  if (ret == EOF) {
+				  fprintf(stderr, "fscanf is error or EOF\n");
+				  return HEX_READ_ERR;
+			  }
 			  count += 2;
 			  total += sum;
 			  
@@ -221,7 +266,11 @@ int read_hex(FILE *fp, unsigned char *flash_data, size_t data_size, unsigned lon
 		  }
 
 	  case 4:
-		  fscanf(fp, "%4lX", &expand_address);
+		  ret = fscanf(fp, "%4lX", &expand_address);
+		  if (ret == EOF) {
+			  fprintf(stderr, "fscanf is error or EOF\n");
+			  return HEX_READ_ERR;
+		  }
 		  count += 4;
 
 		  total = byte_count;
@@ -231,7 +280,11 @@ int read_hex(FILE *fp, unsigned char *flash_data, size_t data_size, unsigned lon
 		  total += (unsigned char)(expand_address);
 		  total += (unsigned char)(expand_address >> 8);
 
-		  fscanf(fp, "%2lX", &sum);
+		  ret = fscanf(fp, "%2lX", &sum);
+		  if (ret == EOF) {
+			  fprintf(stderr, "fscanf is error or EOF\n");
+			  return HEX_READ_ERR;
+		  }
 		  count += 2;
 	
 		  total += sum;
@@ -257,7 +310,11 @@ int read_hex(FILE *fp, unsigned char *flash_data, size_t data_size, unsigned lon
 		  break;
 
 	  case 5:
-		  fscanf(fp, "%8lX", &startLinearAddress);
+		  ret = fscanf(fp, "%8lX", &startLinearAddress);
+		  if (ret == EOF) {
+			  fprintf(stderr, "fscanf is error or EOF\n");
+			  return HEX_READ_ERR;
+		  }
 		  count += 8;
 
 		  total = byte_count;
@@ -269,7 +326,11 @@ int read_hex(FILE *fp, unsigned char *flash_data, size_t data_size, unsigned lon
 		  total += (unsigned char)(startLinearAddress >> 16);
 		  total += (unsigned char)(startLinearAddress >> 24);
 
-		  fscanf(fp, "%2lX", &sum);
+		  ret = fscanf(fp, "%2lX", &sum);
+		  if (ret == EOF) {
+			  fprintf(stderr, "fscanf is error or EOF\n");
+			  return HEX_READ_ERR;
+		  }
 		  count += 2;
 		  total += sum;
 		  
