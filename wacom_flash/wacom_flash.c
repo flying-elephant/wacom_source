@@ -1000,7 +1000,7 @@ int wacom_gather_info(int fd, int *fw_ver)
 	*fw_ver = (int)hid_descriptor.wVersion;
 
 #ifdef WACOM_DEBUG
-	fprintf(stderr,  "Wacom device found:\n Vendor ID: %x obtained fw_ver:%x \n", 
+	fprintf(stderr,  "Wacom device found:\n Vendor ID: %x obtained fw_ver:%d \n",
 	       hid_descriptor.wVendorID, *fw_ver);
 #endif
 
@@ -1140,7 +1140,7 @@ int main(int argc, char *argv[])
 	/****************************************/
 	/*From here prepares for flash operation*/
 	/****************************************/
-	fprintf(stderr, "current_fw: %x new_fw: %x \n", current_fw_ver, new_fw_ver);
+	fprintf(stderr, "current_fw: %d new_fw: %d \n", current_fw_ver, new_fw_ver);
 	fprintf(stderr, "*Flash started...... \n");
 	ret =  wacom_i2c_flash(fd, flash_data);
 	if (ret < 0) {
@@ -1166,8 +1166,8 @@ int main(int argc, char *argv[])
 	}
 
 	fprintf(stderr,  "*Flash finished...... \n");
-	fprintf(stderr,  "Firmware on disc: %x \n", new_fw_ver);
-	fprintf(stderr,  "Flashed firmware : %x \n", updated_fw_ver);
+	fprintf(stderr,  "Firmware on disc: %d \n", new_fw_ver);
+	fprintf(stderr,  "Flashed firmware : %d \n", updated_fw_ver);
 
  exit:
 	if (fd > 0)
