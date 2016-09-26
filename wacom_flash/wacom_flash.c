@@ -1,363 +1,5 @@
 #include "wacom_flash.h"
 
-#include <unistd.h>
-
-/*hex file read for 35D, 35G, and W9002*/
-int read_hex(FILE *fp, unsigned char *flash_data, size_t data_size, unsigned long *max_address)
-{
-  int s;
-  int ret;
-  int fd = -1;
-  unsigned long expand_address = 0;
-  unsigned long startLinearAddress = 0;
-  unsigned long count = 0;
-  unsigned long file_size = 0;  
-  struct stat stat;
-
-  fd = fileno(fp);
-  ret = fstat(fd, &stat);
-  if (ret < 0) {
-	  fprintf(stderr, "Cannot obtain stat \n");
-	  return HEX_READ_ERR;
-  }
-
-  file_size = stat.st_size;
-
-  while (!feof(fp)) {
-	  s = fgetc(fp);
-	  if (ferror(fp)) {
-		  fprintf(stderr, "HEX_READ_ERR 1 \n ");
-		  return HEX_READ_ERR;
-	  }
-   	  
-
-	  if ( s == ':') {
-		  s = fseek(fp, -1L, SEEK_CUR);
-		  if (s) {
-			  fprintf(stderr, "HEX_READ_ERR 2 \n ");
-			  return HEX_READ_ERR;
-		  }
-		  break;
-	  }
-  }
-  
-  while(count < file_size) {
-	  unsigned long address = 0;
-	  unsigned long sum;
-	  unsigned long byte_count;
-	  unsigned long record_type;
-	  unsigned long data;
-	  unsigned int total;
-	  unsigned int i;
-	  int ret = -1;
-	  int cr = 0, lf = 0;
-
-	  s = fgetc(fp);
-	  count++;
-
-	  if (s != ':') {
-		  if (s == ASCII_EOF)
-			  return count;
-
-		  fprintf(stderr, "HEX_READ_ERR 3 \n ");
-		  return HEX_READ_ERR; /* header error */
-	  }      
-
-	  ret = fscanf(fp, "%2lX", &byte_count);
-	  if (ret == EOF) {
-		  fprintf(stderr, "fscanf is error or EOF\n");
-		  return HEX_READ_ERR;
-	  }
-
-	  count += 2;
-
-	  ret = fscanf(fp, "%4lX", &address);
-	  if (ret == EOF) {
-		  fprintf(stderr, "fscanf is error or EOF\n");
-		  return HEX_READ_ERR;
-	  }
-	  count += 4;
-
-	  ret = fscanf(fp, "%2lX", &record_type);
-	  if (ret == EOF) {
-		  fprintf(stderr, "fscanf is error or EOF\n");
-		  return HEX_READ_ERR;
-	  }
-	  count += 2;
-
-	  switch (record_type) {
-	  case 0:
-		  total = byte_count;
-		  total += (unsigned char)(address);
-		  total += (unsigned char)(address >> 8);
-		  total += record_type;
-		  address += expand_address;
-		  if (address > *max_address) {
-			  *max_address = address;
-			  *max_address += (byte_count-1);
-		  }
-	  
-		  for (i = 0; i < byte_count; i++){
-			  ret = fscanf(fp, "%2lX", &data);
-			  if (ret == EOF) {
-				  fprintf(stderr, "fscanf is error or EOF\n");
-				  return HEX_READ_ERR;
-			  }
-
-			  count += 2;
-			  total += data;
-	    
-			  if (address + i < data_size){
-				  flash_data[address + i] = (unsigned char)data;
-			  }
-		  }
-	  
-		  ret = fscanf(fp, "%2lX", &sum);
-		  if (ret == EOF) {
-			  fprintf(stderr, "fscanf is error or EOF\n");
-			  return HEX_READ_ERR;
-		  }
-		  count += 2;
-	  
-		  total += sum;
-		  if ((unsigned char)(total & 0xff) != 0x00) {
-			  fprintf(stderr, "HEX_READ_ERR 4 \n ");
-			  return HEX_READ_ERR; /* check sum error */
-		  }	  
-
-		  cr = fgetc(fp);
-		  count++;
-
-		  lf = fgetc(fp);
-		  count++;
-
-		  if (cr != '\r' || lf != '\n') {
-			  fprintf(stderr, "HEX_READ_ERR 5 \n ");
-			  return HEX_READ_ERR;
-		  }
-	  
-		  break;
-	  case 1:
-		  total = byte_count;
-		  total += (unsigned char)(address);
-		  total += (unsigned char)(address >> 8);
-		  total += record_type;
-
-		  ret = fscanf(fp, "%2lX", &sum);
-		  if (ret == EOF) {
-			  fprintf(stderr, "fscanf is error or EOF\n");
-			  return HEX_READ_ERR;
-		  }
-		  count += 2;	
-
-		  total += sum;
-		  if ((unsigned char)(total & 0xff) != 0x00) {
-			  fprintf(stderr, "HEX_READ_ERR 6 \n ");
-			  return HEX_READ_ERR; /* check sum error */
-		  }	
-
-		  cr = fgetc(fp);
-		  count++;
-
-		  lf = fgetc(fp);
-		  count++;
-
-		  if (cr != '\r' || lf != '\n') {
-			  fprintf(stderr, "HEX_READ_ERR 7 \n ");
-			  return HEX_READ_ERR;
-		  }
-		  
-		  break;
-	  case 2:
-		  ret = fscanf(fp, "%4lX", &expand_address);
-		  if (ret == EOF) {
-			  fprintf(stderr, "fscanf is error or EOF\n");
-			  return HEX_READ_ERR;
-		  }
-		  count += 4;
-
-		  total = byte_count;
-		  total += (unsigned char)(address);
-		  total += (unsigned char)(address >> 8);
-		  total += record_type;
-		  total += (unsigned char)(expand_address);
-		  total += (unsigned char)(expand_address >> 8);
-
-		  ret = fscanf(fp, "%2lX", &sum);
-		  if (ret == EOF) {
-			  fprintf(stderr, "fscanf is error or EOF\n");
-			  return HEX_READ_ERR;
-		  }
-		  count += 2;	
-
-		  total += sum;
-		  if ((unsigned char)(total & 0xff) != 0x00) {
-			  fprintf(stderr, "HEX_READ_ERR 8 \n ");
-			  return HEX_READ_ERR; /* check sum error */
-		  }			
-
-		  cr = fgetc(fp);
-		  count++;
-
-		  lf = fgetc(fp);
-		  count++;
-
-		  if (cr != '\r' || lf != '\n') {
-			  fprintf(stderr, "HEX_READ_ERR 9 \n ");
-			  return HEX_READ_ERR;
-		  }
-	
-		  expand_address <<= 4;
-	
-		  break;
-
-	  case 3:
-		  {
-			  unsigned long cs=0, ip=0;
-			  
-			  ret = fscanf(fp, "%4lX", &cs);
-			  if (ret == EOF) {
-				  fprintf(stderr, "fscanf is error or EOF\n");
-				  return HEX_READ_ERR;
-			  }
-			  count += 4;
-
-			  ret = fscanf(fp, "%4lX", &ip);
-			  if (ret == EOF) {
-				  fprintf(stderr, "fscanf is error or EOF\n");
-				  return HEX_READ_ERR;
-			  }
-			  count += 4;
-
-			  expand_address = (cs << 4) + ip;
-
-			  total = byte_count;
-			  total += (unsigned char)(address);
-			  total += (unsigned char)(address >> 8);
-			  total += record_type;
-			  total += (unsigned char)(cs);
-			  total += (unsigned char)(cs >> 8);
-			  total += (unsigned char)(ip);
-			  total += (unsigned char)(ip >> 8);
-
-			  ret = fscanf(fp, "%2lX", &sum);
-			  if (ret == EOF) {
-				  fprintf(stderr, "fscanf is error or EOF\n");
-				  return HEX_READ_ERR;
-			  }
-			  count += 2;
-			  total += sum;
-			  
-			  if ((unsigned char)(total & 0x0f) != 0x00)
-				  return HEX_READ_ERR;
-
-			  cr = fgetc(fp);
-			  count++;
-			  
-			  lf = fgetc(fp);
-			  count++;
-			  
-			  if (cr != '\r' || lf != '\n')
-				  return HEX_READ_ERR;
-			  
-			  expand_address <<= 16;
-					
-			  break;
-		  }
-
-	  case 4:
-		  ret = fscanf(fp, "%4lX", &expand_address);
-		  if (ret == EOF) {
-			  fprintf(stderr, "fscanf is error or EOF\n");
-			  return HEX_READ_ERR;
-		  }
-		  count += 4;
-
-		  total = byte_count;
-		  total += (unsigned char)(address);
-		  total += (unsigned char)(address >> 8);
-		  total += record_type;
-		  total += (unsigned char)(expand_address);
-		  total += (unsigned char)(expand_address >> 8);
-
-		  ret = fscanf(fp, "%2lX", &sum);
-		  if (ret == EOF) {
-			  fprintf(stderr, "fscanf is error or EOF\n");
-			  return HEX_READ_ERR;
-		  }
-		  count += 2;
-	
-		  total += sum;
-
-		  if ((unsigned char)(total & 0xff) != 0x00) {
-			  fprintf(stderr, "HEX_READ_ERR 10 \n ");
-			  return HEX_READ_ERR; /* check sum error */
-		  }	
-
-		  cr = fgetc(fp);
-		  count++;
-
-		  lf = fgetc(fp);
-		  count++;
-
-		  if (cr != '\r' || lf != '\n') {
-			  fprintf(stderr, "HEX_READ_ERR 11 \n ");
-			  return HEX_READ_ERR;
-		  }
-	
-		  expand_address <<= 16;
-	
-		  break;
-
-	  case 5:
-		  ret = fscanf(fp, "%8lX", &startLinearAddress);
-		  if (ret == EOF) {
-			  fprintf(stderr, "fscanf is error or EOF\n");
-			  return HEX_READ_ERR;
-		  }
-		  count += 8;
-
-		  total = byte_count;
-		  total += (unsigned char)(address);
-		  total += (unsigned char)(address >> 8);
-		  total += record_type;
-		  total += (unsigned char)(startLinearAddress);
-		  total += (unsigned char)(startLinearAddress >> 8);
-		  total += (unsigned char)(startLinearAddress >> 16);
-		  total += (unsigned char)(startLinearAddress >> 24);
-
-		  ret = fscanf(fp, "%2lX", &sum);
-		  if (ret == EOF) {
-			  fprintf(stderr, "fscanf is error or EOF\n");
-			  return HEX_READ_ERR;
-		  }
-		  count += 2;
-		  total += sum;
-		  
-		  if ((unsigned char)(total & 0x0f) != 0x00)
-			  return HEX_READ_ERR; /* check sum error */
-		  
-		  cr = fgetc(fp);
-		  count++;
-		  
-		  lf = fgetc(fp);
-		  count++;
-		  
-		  if (cr != '\r' || lf != '\n')
-			  return HEX_READ_ERR;
-		  
-		  break;
-		  
-	  default:
-		  fprintf(stderr, "HEX_READ_ERR 12 \n ");
-		  return HEX_READ_ERR;
-	  }
-  }
-  
-  return count;
-}
-/*********************************************************************************************************/
-
 bool wacom_i2c_set_feature(int fd, u8 report_id, unsigned int buf_size, u8 *data, 
 			   u16 cmdreg, u16 datareg)
 {
@@ -366,7 +8,7 @@ bool wacom_i2c_set_feature(int fd, u8 report_id, unsigned int buf_size, u8 *data
 	u8 *sFeature = NULL;
 	bool bRet = false;
 
-	sFeature = malloc(sizeof(u8) * total);
+	sFeature = (u8 *)malloc(sizeof(u8) * total);
 	if (!sFeature) {
 		fprintf(stderr, "%s cannot preserve memory \n", __func__);
 		goto out;
@@ -406,11 +48,18 @@ bool wacom_i2c_set_feature(int fd, u8 report_id, unsigned int buf_size, u8 *data
 	return bRet;
 }
 
+/*get_feature uses ioctl for using I2C restart method to communicate*/
+/*and for that i2c_msg requires "char" for buf rather than unsinged char,*/
+/*so storing data should be back as "unsigned char".*/
 bool wacom_i2c_get_feature(int fd, u8 report_id, unsigned int buf_size, u8 *data, 
-			   u16 cmdreg, u16 datareg, int delay)
+		 u16 cmdreg, u16 datareg, char addr)
+
 {
-	int ret = -1;
-	u8 *recv = NULL;
+	struct i2c_rdwr_ioctl_data packets;
+
+	/*"+ 2", adding 2 more spaces for organizeing again later in the passed data, "data"*/
+	unsigned int total = buf_size + 2;
+	char *recv = NULL;
 	bool bRet = false;
 	u8 gFeature[] = {
 		(u8)(cmdreg & 0x00ff),
@@ -421,45 +70,57 @@ bool wacom_i2c_get_feature(int fd, u8 report_id, unsigned int buf_size, u8 *data
 		(u8)((datareg & 0xff00) >> 8)
 	};
 
-	/*"+ 2", adding 2 more spaces for organizeing again later in the passed data, "data"*/
-	recv = malloc(sizeof(u8) * (buf_size + 2));
-	if (!recv) {
+	recv = (char *)malloc(sizeof(char) * total);
+	if (recv == NULL) {
 		fprintf(stderr, "%s cannot preserve memory \n", __func__);
 		goto out;
 	}
+	memset(recv, 0, sizeof(char) * total);
 
-	memset(recv, 0, sizeof(u8) * (buf_size + 2)); /*Append 2 bytes for length low and high of the byte*/
+	{
+		struct i2c_msg msgs[] = {
+			{
+				.addr = addr,
+				.flags = 0,
+				.len = GFEATURE_SIZE,
+				.buf = (char *)gFeature,
+			},
+			{
+				.addr = addr,
+				.flags = I2C_M_RD,
+				.len = total,
+				.buf = recv,
+			},
+		};
 
-	ret = write(fd, gFeature, GFEATURE_SIZE);
-	if (ret != GFEATURE_SIZE) {
-		fprintf(stderr, "%s Sending Get_Feature failed; sent bytes: %d \n", __func__, ret);
-		goto err;
+		packets.msgs  = msgs;
+		packets.nmsgs = 2;
+		if (ioctl(fd, I2C_RDWR, &packets) < 0) {
+			fprintf(stderr, "%s failed to send messages\n", __func__);
+			goto err;
+		}
+
+		/*First two bytes in recv are length of 
+		  the report and data doesn't need them*/
+		memcpy(data, (unsigned char *)(recv + 2), buf_size);
 	}
 
-	usleep(delay);
-
-	ret = read(fd, recv, (buf_size + 2));
-	if (ret != (buf_size + 2)) {
-		fprintf(stderr, "%s Receiving data failed; recieved bytes: %d \n", __func__, ret);
-		goto err;
+#ifdef WACOM_DEBUG_LV3
+	{
+		int ret = -1;
+		fprintf(stderr, "Recved bytes: %d \n", ret);
+		fprintf(stderr, "Expected bytes: %d \n", buf_size);
+		fprintf(stderr, "1: %x, 2: %x, 3:%x, 4:%x 5:%x\n", data[0], data[1], data[2], data[3], data[4]);
 	}
-
-	/*Coppy data pointer, subtracting the first two bytes of the length*/
-	memcpy(data, (recv + 2), buf_size);
-
-#ifdef DEBUG
-	fprintf(stderr, "Recved bytes: %d \n", ret);
-	fprintf(stderr, "Expected bytes: %d \n", buf_size);
-	fprintf(stderr, "1: %x, 2: %x, 3:%x, 4:%x 5:%x\n", data[0], data[1], data[2], data[3], data[4]);
 #endif
-
+	
 	bRet = true;
  err:
 	free(recv);
 	recv = NULL;
-
  out:
 	return bRet;
+
 }
 
 int wacom_flash_cmd(int fd)
@@ -499,7 +160,7 @@ int flash_query_w9013(int fd)
 		return -EXIT_FAIL_SEND_QUERY_COMMAND;
 	}
 
-	bRet = wacom_i2c_get_feature(fd, REPORT_ID_2, RSP_SIZE, response, COMM_REG, DATA_REG, (10 * 1000));
+	bRet = wacom_i2c_get_feature(fd, REPORT_ID_2, RSP_SIZE, response, COMM_REG, DATA_REG, EMR_I2C_ADDR);
 	if (!bRet) {
 		fprintf(stderr, "%s failed to get feature \n", __func__);
 		return -EXIT_FAIL_SEND_QUERY_COMMAND;
@@ -516,7 +177,6 @@ int flash_query_w9013(int fd)
 		return -EXIT_FAIL_SEND_QUERY_COMMAND;
 	}
 	
-	fprintf(stderr, "QUERY SUCCEEDED \n");
 	return 0;
 }
 
@@ -534,24 +194,19 @@ bool flash_blver_w9013(int fd, int *blver)
 	bRet = wacom_i2c_set_feature(fd, REPORT_ID_1, len, command, COMM_REG, DATA_REG);
 	if (!bRet) {
 		fprintf(stderr, "%s failed to set feature1\n", __func__);
-		return -EXIT_FAIL_SEND_QUERY_COMMAND;
+		return bRet;
 	}
 
-	bRet = wacom_i2c_get_feature(fd, REPORT_ID_2, RSP_SIZE, response, COMM_REG, DATA_REG, (10 * 1000));
+	bRet = wacom_i2c_get_feature(fd, REPORT_ID_2, RSP_SIZE, response, COMM_REG, DATA_REG, EMR_I2C_ADDR);
 	if (!bRet) {
 		fprintf(stderr, "%s 2 failed to set feature\n", __func__);
-		return -EXIT_FAIL_SEND_QUERY_COMMAND;
+		return bRet;
 	}
 
 	if ( (response[RTRN_CMD] != BOOT_CMD) ||
 	     (response[RTRN_ECH] != ECH) ) {
 		fprintf(stderr, "%s res3:%x res4:%x \n", __func__, response[RTRN_CMD], response[RTRN_ECH]);
-		return -EXIT_FAIL_SEND_QUERY_COMMAND;
-	}
-
-	if (response[RTRN_RSP] != QUERY_RSP) {
-		fprintf(stderr, "%s res5:%x \n", __func__, response[RTRN_RSP]);
-		return -EXIT_FAIL_SEND_QUERY_COMMAND;
+		return false;
 	}
 	
 	*blver = (int)response[RTRN_RSP];
@@ -573,19 +228,19 @@ bool flash_mputype_w9013(int fd, int* pMpuType)
 	bRet = wacom_i2c_set_feature(fd, REPORT_ID_1, len, command, COMM_REG, DATA_REG);
 	if (!bRet) {
 		fprintf(stderr, "%s failed to set feature \n", __func__);
-		return -EXIT_FAIL_SEND_QUERY_COMMAND;
+		return bRet;
 	}
 
-	bRet = wacom_i2c_get_feature(fd, REPORT_ID_2, RSP_SIZE, response, COMM_REG, DATA_REG, (10 * 1000));
+	bRet = wacom_i2c_get_feature(fd, REPORT_ID_2, RSP_SIZE, response, COMM_REG, DATA_REG, EMR_I2C_ADDR);
 	if (!bRet) {
 		fprintf(stderr, "%s failed to get feature \n", __func__);
-		return -EXIT_FAIL_SEND_QUERY_COMMAND;
+		return bRet;
 	}
 
 	if ( (response[RTRN_CMD] != MPU_CMD) ||
 	     (response[RTRN_ECH] != ECH) ) {
 		fprintf(stderr, "%s res3:%x res4:%x \n", __func__, response[RTRN_CMD], response[RTRN_ECH]);
-		return -EXIT_FAIL_SEND_QUERY_COMMAND;
+		return false;
 	}
 	
 	*pMpuType = (int)response[RTRN_RSP];	
@@ -605,7 +260,7 @@ bool flash_end_w9013(int fd)
 	bRet = wacom_i2c_set_feature(fd, REPORT_ID_1, len, command, COMM_REG, DATA_REG);
 	if (!bRet) {
 		fprintf(stderr, "%s failed to set feature 1\n", __func__);
-		return -EXIT_FAIL_SEND_QUERY_COMMAND;
+		return bRet;
 	}
 
 	return true;
@@ -640,17 +295,17 @@ bool erase_datamem(int fd)
 	bRet = wacom_i2c_set_feature(fd, REPORT_ID_1, len, command, COMM_REG, DATA_REG);
 	if (!bRet) {
 		fprintf(stderr, "%s failed to set feature 1 \n", __func__);
-		return -EXIT_FAIL_SEND_QUERY_COMMAND;
+		return bRet;
 	}
 	
 	usleep(50);
 
 	do {
 
-		bRet = wacom_i2c_get_feature(fd, REPORT_ID_2, BOOT_RSP_SIZE, response, COMM_REG, DATA_REG, 50);
+		bRet = wacom_i2c_get_feature(fd, REPORT_ID_2, BOOT_RSP_SIZE, response, COMM_REG, DATA_REG, EMR_I2C_ADDR);
 		if (!bRet) {
 			fprintf(stderr, "%s failed to get feature \n", __func__);
-			return -EXIT_FAIL_SEND_QUERY_COMMAND;
+			return bRet;
 		}
 		if ((response[RTRN_CMD] != 0x0e || response[RTRN_ECH] != ECH) || (response[RTRN_RSP] != 0xff && response[RTRN_RSP] != 0x00))
 			return false;
@@ -692,17 +347,17 @@ bool erase_codemem(int fd, int *eraseBlock, int num)
 		bRet = wacom_i2c_set_feature(fd, REPORT_ID_1, len, command, COMM_REG, DATA_REG);
 		if (!bRet) {
 			fprintf(stderr, "%s failed to set feature \n", __func__);
-			return -EXIT_FAIL_SEND_QUERY_COMMAND;
+			return bRet;
 		}	
 
 		usleep(50);
 
 		do {	
 
-			bRet = wacom_i2c_get_feature(fd, REPORT_ID_2, BOOT_RSP_SIZE, response, COMM_REG, DATA_REG, 50);
+			bRet = wacom_i2c_get_feature(fd, REPORT_ID_2, BOOT_RSP_SIZE, response, COMM_REG, DATA_REG, EMR_I2C_ADDR);
 			if (!bRet) {
 				fprintf(stderr, "%s failed to get feature \n", __func__);
-				return -EXIT_FAIL_SEND_QUERY_COMMAND;
+				return bRet;
 			}			
 			if ((response[RTRN_CMD] != 0x00 || response[RTRN_ECH] != ECH) || (response[RTRN_RSP] != 0xff && response[5] != 0x00))
 				return false;
@@ -773,7 +428,7 @@ bool flash_write_block_w9013(int fd, char *flash_data,
 	bRet = wacom_i2c_set_feature(fd, REPORT_ID_1, (BOOT_CMD_SIZE + 4 - 8), command, COMM_REG, DATA_REG);
 	if (!bRet) {
 		fprintf(stderr, "%s failed to set feature \n", __func__);
-		return -EXIT_FAIL_SEND_QUERY_COMMAND;
+		return bRet;
 	}	
 
 	usleep(50);
@@ -781,7 +436,7 @@ bool flash_write_block_w9013(int fd, char *flash_data,
 	return true;
 }
 
-bool flash_write_w9013(int fd, unsigned char *flash_data,
+bool flash_write_w9013(int fd, char *flash_data,
 			      unsigned long start_address, unsigned long *max_address)
 {
 	bool bRet = false;
@@ -800,7 +455,7 @@ bool flash_write_w9013(int fd, unsigned char *flash_data,
 		if (i == (FLASH_BLOCK_SIZE))
 			continue;
 
-		bRet = flash_write_block_w9013(fd, (char*)flash_data, ulAddress, &command_id, &ECH);
+		bRet = flash_write_block_w9013(fd, flash_data, ulAddress, &command_id, &ECH);
 		if(!bRet)
 			return false;
 		if (ECH_len == 3)
@@ -811,10 +466,10 @@ bool flash_write_w9013(int fd, unsigned char *flash_data,
 			for (j = 0; j < 3; j++) {
 				do {
 
-					bRet = wacom_i2c_get_feature(fd, REPORT_ID_2, BOOT_RSP_SIZE, response, COMM_REG, DATA_REG, 50);
+					bRet = wacom_i2c_get_feature(fd, REPORT_ID_2, BOOT_RSP_SIZE, response, COMM_REG, DATA_REG, EMR_I2C_ADDR);
 					if (!bRet) {
 						fprintf(stderr, "%s failed to set feature \n", __func__);
-						return -EXIT_FAIL_SEND_QUERY_COMMAND;
+						return bRet;
 					}
 					
 					if ((response[RTRN_CMD] != 0x01 || response[RTRN_ECH] != ECH_ARRAY[j]) || (response[RTRN_RSP] != 0xff && response[RTRN_RSP] != 0x00)) {
@@ -830,7 +485,7 @@ bool flash_write_w9013(int fd, unsigned char *flash_data,
 	return true;
 }
 
-int wacom_i2c_flash_w9013(int fd, unsigned char *flash_data)
+int wacom_i2c_flash_w9013(int fd, char *flash_data)
 {
 	bool bRet = false;
 	int result, i;
@@ -844,8 +499,11 @@ int wacom_i2c_flash_w9013(int fd, unsigned char *flash_data)
 	if (!flash_blver_w9013(fd, &iBLVer)) {
 		fprintf(stderr, "%s failed to get Boot Loader version \n", __func__);
 		return -EXIT_FAIL_GET_BOOT_LOADER_VERSION;
-	}	
+	}
+	
+#ifdef WACOM_DEBUG_LV1
 	fprintf(stderr, "BL version: %x \n", iBLVer);
+#endif
 
 	/*Obtain MPU type: this can be manually done in user space*/
 	if (!flash_mputype_w9013(fd, &iMpuType)) {
@@ -856,8 +514,10 @@ int wacom_i2c_flash_w9013(int fd, unsigned char *flash_data)
 		fprintf(stderr, "MPU is not for W9013 : %x \n", iMpuType);
 		return -EXIT_FAIL_GET_MPU_TYPE;
 	}
-	fprintf(stderr, "MPU type: %x \n", iMpuType);
-	
+
+#ifdef WACOM_DEBUG_LV1
+	fprintf(stderr, "MPU type: %x \n", iMpuType);	
+#endif	
 	/*-----------------------------------*/
 	/*Flashing operation starts from here*/
 
@@ -874,7 +534,9 @@ int wacom_i2c_flash_w9013(int fd, unsigned char *flash_data)
 	msleep(300);
 
 	/*Erase the old program*/
+#ifdef WACOM_DEBUG_LV1
 	fprintf(stderr, "%s erasing the current firmware \n", __func__);
+#endif
 	bRet = flash_erase_w9013(fd, eraseBlock,  eraseBlockNum);
 	if (!bRet) {
 		fprintf(stderr, "%s failed to erase the user program \n", __func__);
@@ -883,7 +545,9 @@ int wacom_i2c_flash_w9013(int fd, unsigned char *flash_data)
 	}
 
 	/*Write the new program*/
+#ifdef WACOM_DEBUG_LV1
 	fprintf(stderr, "%s writing new firmware \n", __func__);
+#endif
 	bRet = flash_write_w9013(fd, flash_data, start_address, &max_address);
 	if (!bRet) {
 		fprintf(stderr, "%s failed to write firmware \n", __func__);
@@ -892,15 +556,19 @@ int wacom_i2c_flash_w9013(int fd, unsigned char *flash_data)
 	}	
 	
 	/*Return to the user mode*/
+#ifdef WACOM_DEBUG_LV1
 	fprintf(stderr, "%s closing the boot mode \n", __func__);
+#endif
 	bRet = flash_end_w9013(fd);
 	if (!bRet) {
 		fprintf(stderr, "%s closing boot mode failed  \n", __func__);
 		result = -EXIT_FAIL_EXIT_FLASH_MODE;
 		goto fail;
 	}
-	
+
+#ifdef WACOM_DEBUG_LV1	
 	fprintf(stderr, "%s write and verify completed \n", __func__);
+#endif
 	result = EXIT_OK;
 
  fail:
@@ -914,7 +582,7 @@ int wacom_i2c_flash_w9013(int fd, unsigned char *flash_data)
 	return result;	
 }
 
-int wacom_i2c_flash(int fd, unsigned char *flash_data)
+int wacom_i2c_flash(int fd, char *flash_data)
 {
 	int ret;
 
@@ -938,10 +606,33 @@ int wacom_i2c_flash(int fd, unsigned char *flash_data)
 	return ret;
 }
 
+int wacom_flash_emr(int fd, char *data)
+{
+	int ret = -1;
+#ifdef CONDUCT_FLASH
+	ret =  wacom_i2c_flash(fd, data);
+	if (ret < 0) {
+		fprintf(stderr, "%s failed to flash firmware\n", __func__);
+		ret = -EXIT_FAIL;
+		goto exit;
+	}
+	
+	msleep(200);
+#endif
+
+ exit:
+	return ret;
+}
+
 /*********************************************************************************************************/
+#ifdef WACOM_DEBUG_LV2
 void show_hid_descriptor(HID_DESC hid_descriptor)
 {
-	fprintf(stderr,  "%d 0x%x 0x%x %d %d \n %d %d %d %d %d \n 0x%x 0x%x 0x%x %d %d\n",
+	fprintf(stderr,  "Length:%d bcdVer:0x%x RPLength:0x%x \
+RPRegister:%d InputReg:%d \n \
+MaxInput:%d OutReg:%d MaxOut:%d \
+ComReg:%d DataReg:%d \n VID:0x%x \
+PID:0x%x wVer:0x%x ResvH:%d ResvL%d\n",
 	       hid_descriptor.wHIDDescLength,
 	       hid_descriptor.bcdVersion,
 	       hid_descriptor.wReportDescLength,
@@ -959,26 +650,24 @@ void show_hid_descriptor(HID_DESC hid_descriptor)
 	       hid_descriptor.RESERVED_LOW);
 }
 
-int wacom_gather_info(int fd, int *fw_ver)
+int get_hid_desc(int fd, char addr)
 {
 	struct i2c_rdwr_ioctl_data packets;
 	HID_DESC hid_descriptor;		
 	int ret = -1;
-	u16 cmd_reg;
-	u16 data_reg;
-	u8 cmd[] = {HID_DESC_REGISTER, 0x00};
+	char cmd[] = {HID_DESC_REGISTER, 0x00};
 	struct i2c_msg msgs[] = {
 		{
-			.addr = I2C_TARGET,
+			.addr = addr,
 			.flags = 0,
 			.len = sizeof(cmd),
-			.buf = (char *)cmd,
+			.buf = cmd,
 		},
 		{
-			.addr = I2C_TARGET,
+			.addr = addr,
 			.flags = I2C_M_RD,
 			.len = sizeof(HID_DESC),
-			.buf = (char *)(&hid_descriptor),
+			.buf = (char *)&hid_descriptor,
 		},
 	};
 
@@ -990,188 +679,309 @@ int wacom_gather_info(int fd, int *fw_ver)
 		goto out;
 	}
 
-	if (hid_descriptor.wVendorID != WACOM_VENDOR1 &&
-	    hid_descriptor.wVendorID != WACOM_VENDOR2) {
-		fprintf(stderr, "the vendor ID is not Wacom ID, : %x \n", hid_descriptor.wVendorID);
-		ret = -EXIT_FAIL;
+	show_hid_descriptor(hid_descriptor);
+
+	ret = 0;
+ out:
+	return ret;
+}
+#endif
+
+int parse_active_fw_version(char *data, int tech)
+{
+	int fw_ver = 0;
+
+	if (tech == TECH_EMR) {
+		fw_ver = (int)data[12] << 8 | data[11];
+	} else {
+		fw_ver = (int)data[12] << 8 | data[11];
+		fw_ver = fw_ver * AES_FW_BASE + data[13];
+	}
+
+	return fw_ver;
+}
+
+int wacom_gather_info(int fd, int *fw_ver, int tech)
+{
+	int ret = -1;
+	size_t report_size = ((tech == TECH_EMR) ? WACOM_QUERY_SIZE : TOUCH_QUERY_SIZE);
+	char report_id = ((tech == TECH_EMR) ? WACOM_CMD_QUERY : TOUCH_CMD_QUERY);
+	char addr = ((tech == TECH_EMR) ? EMR_I2C_ADDR: AES_I2C_ADDR);
+	char data[WACOM_QUERY_SIZE] = {0};
+	bool bRet = false;
+
+	bRet = wacom_i2c_get_feature(fd, report_id, report_size,
+				     (u8 *)data, COMM_REG, DATA_REG, addr);
+	if ( bRet == false ){
+		fprintf(stderr, "cannot get data query \n");
 		goto out;
 	}
 
-	*fw_ver = (int)hid_descriptor.wVersion;
-
-#ifdef WACOM_DEBUG
-	fprintf(stderr,  "Wacom device found:\n Vendor ID: %x obtained fw_ver:%d \n",
-	       hid_descriptor.wVendorID, *fw_ver);
-#endif
-
+	*fw_ver = parse_active_fw_version(data, tech);
 	ret = 0;
-
  out:
 	return ret;
 }
 
-int get_device(int *current_fw_ver, char *device_num)
+int get_device(int *current_fw_ver, char *device_num, int tech)
 {
 	int fd = -1;
-	int i = 0, ret = -1;
+	int ret = -1;
+	char addr = ((tech == TECH_EMR) ? EMR_I2C_ADDR : AES_I2C_ADDR);
 
 	fd = open(device_num, O_RDWR);
 	if (fd < 0) {
-		perror(device_num);
-		fprintf(stderr, "xcannot open %s \n", device_num);
+		fprintf(stderr, "cannot open %s \n", device_num);
 		goto exit;
 	}
 	
-	/*If I2C_SLAVE makes "Segmentation fault" or the error, use I2C_SLAVE_FORCE instead*/
-	ret = ioctl(fd, I2C_SLAVE_FORCE, I2C_TARGET);
+	/*Use I2C_SLAVE_FORCE for DMA transfer*/
+	ret = ioctl(fd, I2C_SLAVE_FORCE, addr);
 	if (ret < 0) {
-		fprintf(stderr, "Falied to set the slave address: %d \n", I2C_TARGET);
+		fprintf(stderr, "Falied to set the slave address: %d \n", addr);
+		close(fd);
 		goto exit;
 	}
 
-	ret = wacom_gather_info(fd, current_fw_ver);
+#ifdef WACOM_DEBUG_LV2
+	get_hid_desc(fd, addr);
+#endif
+
+	ret = wacom_gather_info(fd, current_fw_ver, tech);
 	if (ret < 0) {
 		fprintf(stderr, "Cannot get device infomation\n");
+		close(fd);
 		goto exit;
 	}
 
 	ret = fd;
+
  exit:
 	return ret;
 
 }
 
-/*********************************************************************************************************/
+int is_symlink(char *path)
+{
+    struct stat sb = {0};
+    int ret = -1;
+
+    ret = lstat(path, &sb);
+    if (ret < 0) {
+	    fprintf(stderr, "stat() %s: %s failed\n", strerror(errno), path);
+	    goto exit;
+    }
+
+    if (S_ISLNK(sb.st_mode))
+	    ret = 0;
+
+ exit:
+    return ret;
+}
+
+int read_symlink(char *path, char *file_name)
+{
+    ssize_t len = 0;
+    int ret = 0;
+    char buf[BUF_SIZE] = {0};
+
+    ret = is_symlink(path);
+    if (ret < 0){
+	    fprintf(stderr, "This is not symbolic link: %s\n", path);
+	    goto exit;
+    }
+    
+    len = readlink(path, buf, sizeof(buf) - 1);
+    if (len < 0){
+	    fprintf(stderr, "readlink() %s: %s failed\n", strerror(errno), path);
+	    ret = -EXIT_FAIL_READLINK;
+	    goto exit;
+    }
+
+    buf[len] = '\0';
+    ret = 0;
+
+    strcpy(file_name, basename(buf));
+
+ exit:
+    return ret;
+}
+
+int find_out_technology(char *file_name)
+{
+	int ret = -1;
+	int size = 0;
+	char *pos;
+	char str[BUF_SIZE] = {0};
+
+	pos = strchr(file_name, PARSE_SYMBOL);
+	if (pos == NULL) {
+		fprintf(stderr, "%s failed \n", __func__);
+		goto exit;
+	}
+
+	size = (pos - file_name);
+	strncpy(str, file_name, size);
+	if (!strcmp(str, EMR_HEAD_NAME))
+		ret = TECH_EMR;
+	else
+		ret = TECH_AES;
+
+ exit:
+	return ret;
+}
+
+int get_installed_technology_from_file(char *path)
+{
+	int ret = -1;
+	char file_name[BUF_SIZE] = {0};
+
+	ret = read_symlink(path, file_name);
+	if (ret < 0) {
+		fprintf(stderr, "%s reading the link failed \n", __func__);
+		goto exit;
+	}
+
+	ret = find_out_technology(file_name);
+ exit:
+	return ret;
+}
+
 int main(int argc, char *argv[])
 {
-	/*For read hex*/
-	char *file_name;
-	char device_num[64];
-	unsigned long maxAddr;
-	FILE *fp;
-
-	/*For Flash*/
-	bool bRet = false;
-
-	unsigned char flash_data[DATA_SIZE];
-	bool active_fw_check = false;
-	bool force_flash = false;
-	int i, ret = 0, fd = -1;
-	int count = 0, cnt = 0;
+	unsigned long maxAddr = 0;
+	int fd = -1;
+	int ret = -1;
 	int current_fw_ver = -1;
-	int new_fw_ver = -1;
-	int updated_fw_ver = -1;
+	int tech = TECH_EMR;
+	size_t data_size = 0;
+	char *data;
+	char device_num[64] = {0};
+	bool active_fw_check = false;
 
-	/**************************************/
-	/**************************************/
-	/*From here starts reading hex file****/
-	/**************************************/
-	/**************************************/
-	if (argc != 4){
-		fprintf(stderr,  "Usage: $wac_flash [target file name] [type] [i2c-device path]\n");
-		fprintf(stderr,  "Ex: $wac_flash W9013_056.hex -r i2c-1 \n");
+	FILE *fp;
+	UBL_STATUS *pUBLStatus = NULL;
+	UBL_PROCESS *pUBLProcess = NULL;
+
+	if (argc  < 2 || argc > 3){
+		fprintf(stderr,  "Usage: $wac_flash [i2c-device path] [option]\n");
+		fprintf(stderr,  "Ex: $wac_flash W9013_056.hex i2c-1 \n");
 		ret = -EXIT_NOFILE;
 		goto exit;
 	}
 
-	if (!strcmp(argv[2], "-a")) {
+	if (argc == 3 && !strcmp(argv[2], "-a")) {
 		fprintf(stderr,  "Returning active firmware version only\n");
 		active_fw_check = true;
-	} else if (!strcmp(argv[2], FLAGS_RECOVERY_TRUE)) {
-		fprintf(stderr,  "Force flash set\n");
-		force_flash = true;
-	} else if (!strcmp(argv[2], FLAGS_RECOVERY_FALSE)) {
-		fprintf(stderr,  "Force flash is NOT set\n");
-	} else {
-		fprintf(stderr, "option is not valid \n");
-		ret = -EXIT_NOSUCH_OPTION;
-		goto exit;
 	}
 
-	/****************************************/
-	/*Hex file parsing                      */
-	/****************************************/
-	file_name = argv[1];
-	snprintf(device_num, sizeof(device_num), "%s%s", "/dev/", argv[3]);
+	sprintf(device_num, "%s%s", DEVFILE_PATH, argv[1]);
 
-	/*If active_fw_check is flagged; skip below file-read*/
-	if (!active_fw_check) {
-		memset(flash_data, 0xff, DATA_SIZE);	
-		fp = fopen(argv[1], "rb");
-		if (fp == NULL) {
-			fprintf(stderr, "the file name is invalid or does not exist\n");
-			ret = -EXIT_FAIL;
-			goto exit;
+	tech = get_installed_technology_from_file(FW_LINK_PATH);
+	if (tech == TECH_EMR) {
+		data_size = DATA_SIZE;
+	}  else {
+		data_size = UBL_ROM_SIZE;
+		pUBLStatus = (UBL_STATUS *)malloc(sizeof(UBL_STATUS));
+		pUBLProcess = (UBL_PROCESS *)malloc(sizeof(UBL_PROCESS));
+		if (pUBLStatus == NULL || pUBLProcess == NULL) {
+			fprintf(stderr, "cannot preserve memories \n");
+			return -ERR;
 		}
 
-		cnt = read_hex(fp, flash_data, DATA_SIZE, &maxAddr);
-		if (cnt == HEX_READ_ERR) {
-			fprintf(stderr, "reading the hex file failed\n");
-			fclose(fp);
-			ret = -EXIT_NO_INTEL_HEX;
-			goto exit;
-		}
-		fclose(fp);
-
-		new_fw_ver = (int)(flash_data[DATA_SIZE - 1] << 8) | (int)flash_data[DATA_SIZE -2];
+		memset(pUBLStatus, 0, sizeof(UBL_STATUS) );
+		memset(pUBLProcess, 0, sizeof(UBL_PROCESS) );
+		pUBLProcess->start_adrs = 0;//UBL_G11T_BASE_FLASH_ADDRESS;
+		pUBLProcess->process = 0;	
 	}
 
-	/****************************************/
+	data = (char *)malloc(sizeof(char) * data_size);
+	memset(data, 0xff, data_size);
+
+#ifdef I2C_OPEN
 	/*Opening and setting file descriptor   */
-	/****************************************/
-	fd = get_device(&current_fw_ver, device_num);
+	fd = get_device(&current_fw_ver, device_num, tech);
 	if (fd < 0) {
 		fprintf(stderr, "cannot find Wacom i2c device\n");
+		ret = fd;
 		goto exit;
 	}
 
-	/****************************************/
-	/*Checking option other than "-n"       */
-	/****************************************/
-	if (force_flash) {
-		fprintf(stderr,  "No firmware check; now starting to flash");
-		goto firmware_flash;
-	} else if (active_fw_check) {
+	if (active_fw_check) {
+		ret = 0;
 		printf("%d\n", current_fw_ver);
 		goto exit;
 	} 
 
- firmware_flash:
-	/****************************************/
-	/*From here prepares for flash operation*/
-	/****************************************/
-	fprintf(stderr, "current_fw: %d new_fw: %d \n", current_fw_ver, new_fw_ver);
-	fprintf(stderr, "*Flash started...... \n");
-	ret =  wacom_i2c_flash(fd, flash_data);
-	if (ret < 0) {
-		fprintf(stderr, "%s failed to flash firmware\n", __func__);
-		ret = -EXIT_FAIL;
-		goto exit;
-	}
-	
-	msleep(200);
+#ifdef WACOM_DEBUG_LV1
+	fprintf(stderr, "%s current_fw: 0x%x \n", __func__, current_fw_ver);
+#endif
 
-	if (!active_fw_check)
-		fprintf(stderr, "\n3:######################\n");
-	if (wacom_gather_info(fd, &updated_fw_ver) < 0) {
-		fprintf(stderr, "cannot get updated information \n");
-		goto exit;
+#endif
+
+#ifdef FILE_READ
+
+#ifdef WACOM_DEBUG_LV1
+	fprintf(stderr, "Reading hex file... \n");
+#endif
+	fp = fopen(FW_LINK_PATH, "rb");
+	if (fp == NULL) {
+		fprintf(stderr, "the file name is invalid or does not exist \n");
+		goto err;
 	}
 
-	if (updated_fw_ver == new_fw_ver) {
-		fprintf(stderr,  "Firmware update successfully finished \n");
+	ret = read_hex(fp, data, data_size, &maxAddr, pUBLProcess, pUBLStatus, tech);
+	if (ret == HEX_READ_ERR) {
+		fprintf(stderr, "reading the hex file failed\n");
+		fclose(fp);
+		goto err;
+	}
+	fclose(fp);
+#endif
+
+	fprintf(stderr,  "*Flash started...... \n");
+	if (tech == TECH_EMR) {
+		ret = wacom_flash_emr(fd, data);
+		if (ret < 0)
+			fprintf(stderr, "wacom emr flash failed \n");
 	} else {
-		fprintf(stderr, "firmwrae version does not match;\n fw_file_ver: %d current_fw_ver: %d\n",
-			new_fw_ver, updated_fw_ver);
+		ret = wacom_flash_aes(fd, data, pUBLStatus, pUBLProcess);
+		if (ret < 0)
+			fprintf(stderr, "wacom aes flash failed \n");
 	}
 
-	fprintf(stderr,  "*Flash finished...... \n");
-	fprintf(stderr,  "Firmware on disc: %d \n", new_fw_ver);
-	fprintf(stderr,  "Flashed firmware : %d \n", updated_fw_ver);
+#ifdef CONDUCT_FLASH
+	/*getting the active firmware version again*/
+	ret = wacom_gather_info(fd, &current_fw_ver, tech);
+	if (ret < 0) {
+		fprintf(stderr, "cannot get firmware version \n");
+		goto err;
+	}
 
- exit:
-	if (fd > 0)
-		close(fd);
+	fprintf(stderr,  "Flashed firmware : %x \n", current_fw_ver);
+#endif
 
+	ret = 0;
+ err:
+	if (tech == TECH_AES) {
+		if (pUBLStatus != NULL) {
+			free(pUBLStatus);
+			pUBLStatus = NULL;
+		}
+
+		if (pUBLProcess != NULL) {
+			free(pUBLProcess);
+			pUBLProcess = NULL;
+		}
+	}
+
+	if (data != NULL) {
+		free(data);
+		data = NULL;
+	}
+
+exit:
+	close(fd);
+ 
 	return -ret;
 }
