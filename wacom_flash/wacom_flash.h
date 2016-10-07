@@ -26,6 +26,9 @@
 #define WACOM_VENDOR1           0x56a
 #define WACOM_VENDOR2           0x2d1f
 
+#define FLAGS_RECOVERY_TRUE    "0"
+#define FLAGS_RECOVERY_FALSE   "1"
+
 /*HID over I2C spec*/
 #define HID_DESC_REGISTER       0x01
 #define USAGE_PAGE              0x05

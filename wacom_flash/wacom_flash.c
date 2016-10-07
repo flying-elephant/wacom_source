@@ -625,7 +625,6 @@ int wacom_flash_emr(int fd, char *data)
 }
 
 /*********************************************************************************************************/
-#ifdef WACOM_DEBUG_LV2
 void show_hid_descriptor(HID_DESC hid_descriptor)
 {
 	fprintf(stderr,  "Length:%d bcdVer:0x%x RPLength:0x%x \
@@ -685,7 +684,6 @@ int get_hid_desc(int fd, char addr)
  out:
 	return ret;
 }
-#endif
 
 int parse_active_fw_version(char *data, int tech)
 {
@@ -723,31 +721,42 @@ int wacom_gather_info(int fd, int *fw_ver, int tech)
 	return ret;
 }
 
-int get_device(int *current_fw_ver, char *device_num, int tech)
+int get_device(int *current_fw_ver, char *device_num, int *tech)
 {
 	int fd = -1;
 	int ret = -1;
-	char addr = ((tech == TECH_EMR) ? EMR_I2C_ADDR : AES_I2C_ADDR);
+	int i;
+	char addr = EMR_I2C_ADDR;
 
-	fd = open(device_num, O_RDWR);
-	if (fd < 0) {
-		fprintf(stderr, "cannot open %s \n", device_num);
-		goto exit;
-	}
+	/*Wacom I2C device can be with an address either 0x09(EMR) or 0x0a(touch&AES)*/
+	for (i = 0; i < 2; i++) {
+		fd = open(device_num, O_RDWR);
+		if (fd < 0) {
+			fprintf(stderr, "cannot open %s \n", device_num);
+			goto exit;
+		}
 	
-	/*Use I2C_SLAVE_FORCE for DMA transfer*/
-	ret = ioctl(fd, I2C_SLAVE_FORCE, addr);
-	if (ret < 0) {
-		fprintf(stderr, "Falied to set the slave address: %d \n", addr);
+		/*Use I2C_SLAVE_FORCE for DMA transfer*/
+		ret = ioctl(fd, I2C_SLAVE_FORCE, addr);
+		if (ret < 0) {
+			fprintf(stderr, "Falied to set the slave address: %d \n", addr);
+			close(fd);
+			goto exit;
+		}
+
+		ret = get_hid_desc(fd, addr);
+		if (ret == 0) {
+			*tech = (addr == EMR_I2C_ADDR) ? TECH_EMR : TECH_AES;
+			fprintf(stderr, "%s found: addr %x \n", (*tech == TECH_EMR) ? "EMR" : "AES", addr);
+
+			break;
+		}
+
 		close(fd);
-		goto exit;
+		addr = AES_I2C_ADDR;
 	}
 
-#ifdef WACOM_DEBUG_LV2
-	get_hid_desc(fd, addr);
-#endif
-
-	ret = wacom_gather_info(fd, current_fw_ver, tech);
+	ret = wacom_gather_info(fd, current_fw_ver, *tech);
 	if (ret < 0) {
 		fprintf(stderr, "Cannot get device infomation\n");
 		close(fd);
@@ -760,93 +769,6 @@ int get_device(int *current_fw_ver, char *device_num, int tech)
 	return ret;
 
 }
-
-int is_symlink(char *path)
-{
-    struct stat sb = {0};
-    int ret = -1;
-
-    ret = lstat(path, &sb);
-    if (ret < 0) {
-	    fprintf(stderr, "stat() %s: %s failed\n", strerror(errno), path);
-	    goto exit;
-    }
-
-    if (S_ISLNK(sb.st_mode))
-	    ret = 0;
-
- exit:
-    return ret;
-}
-
-int read_symlink(char *path, char *file_name)
-{
-    ssize_t len = 0;
-    int ret = 0;
-    char buf[BUF_SIZE] = {0};
-
-    ret = is_symlink(path);
-    if (ret < 0){
-	    fprintf(stderr, "This is not symbolic link: %s\n", path);
-	    goto exit;
-    }
-    
-    len = readlink(path, buf, sizeof(buf) - 1);
-    if (len < 0){
-	    fprintf(stderr, "readlink() %s: %s failed\n", strerror(errno), path);
-	    ret = -EXIT_FAIL_READLINK;
-	    goto exit;
-    }
-
-    buf[len] = '\0';
-    ret = 0;
-
-    strcpy(file_name, basename(buf));
-
- exit:
-    return ret;
-}
-
-int find_out_technology(char *file_name)
-{
-	int ret = -1;
-	int size = 0;
-	char *pos;
-	char str[BUF_SIZE] = {0};
-
-	pos = strchr(file_name, PARSE_SYMBOL);
-	if (pos == NULL) {
-		fprintf(stderr, "%s failed \n", __func__);
-		goto exit;
-	}
-
-	size = (pos - file_name);
-	strncpy(str, file_name, size);
-	if (!strcmp(str, EMR_HEAD_NAME))
-		ret = TECH_EMR;
-	else
-		ret = TECH_AES;
-
- exit:
-	return ret;
-}
-
-int get_installed_technology_from_file(char *path)
-{
-	int ret = -1;
-	char file_name[BUF_SIZE] = {0};
-
-	ret = read_symlink(path, file_name);
-	if (ret < 0) {
-		fprintf(stderr, "%s reading the link failed \n", __func__);
-		goto exit;
-	}
-
-	ret = find_out_technology(file_name);
- exit:
-	return ret;
-}
-
 int main(int argc, char *argv[])
 {
 	unsigned long maxAddr = 0;
@@ -858,26 +780,54 @@ int main(int argc, char *argv[])
 	char *data;
 	char device_num[64] = {0};
 	bool active_fw_check = false;
+	bool force_flash = false;
 
 	FILE *fp;
 	UBL_STATUS *pUBLStatus = NULL;
 	UBL_PROCESS *pUBLProcess = NULL;
 
-	if (argc  < 2 || argc > 3){
-		fprintf(stderr,  "Usage: $wac_flash [i2c-device path] [option]\n");
-		fprintf(stderr,  "Ex: $wac_flash W9013_056.hex i2c-1 \n");
+	if (argc != 4){
+		fprintf(stderr,  "Usage: $wac_flash [target file name] [type] [i2c-device path]\n");
+		fprintf(stderr,  "Ex: $wac_flash W9013_056.hex -r i2c-1 \n");
 		ret = -EXIT_NOFILE;
 		goto exit;
 	}
 
-	if (argc == 3 && !strcmp(argv[2], "-a")) {
+	if (!strcmp(argv[2], "-a")) {
 		fprintf(stderr,  "Returning active firmware version only\n");
 		active_fw_check = true;
+	} else if (!strcmp(argv[2], FLAGS_RECOVERY_TRUE)) {
+		force_flash = true;
+	} else if (!strcmp(argv[2], FLAGS_RECOVERY_FALSE)) {
+		fprintf(stderr,  "Force flash is NOT set\n");
+	} else {
+		fprintf(stderr, "option is not valid \n");
+		ret = -EXIT_NOSUCH_OPTION;
+		goto exit;
 	}
 
-	sprintf(device_num, "%s%s", DEVFILE_PATH, argv[1]);
+	sprintf(device_num, "%s%s", DEVFILE_PATH, argv[3]);
 
-	tech = get_installed_technology_from_file(FW_LINK_PATH);
+#ifdef I2C_OPEN
+	/*Opening and setting file descriptor   */
+	fd = get_device(&current_fw_ver, device_num, &tech);
+	if (fd < 0) {
+		fprintf(stderr, "cannot find Wacom i2c device\n");
+		ret = fd;
+		goto exit;
+	}
+
+	if (active_fw_check) {
+		ret = 0;
+		printf("%d\n", current_fw_ver);
+		goto exit;
+	} 
+
+#ifdef WACOM_DEBUG_LV1
+	fprintf(stderr, "%s current_fw: 0x%x \n", __func__, current_fw_ver);
+#endif
+
+#endif
 	if (tech == TECH_EMR) {
 		data_size = DATA_SIZE;
 	}  else {
@@ -898,26 +848,7 @@ int main(int argc, char *argv[])
 	data = (char *)malloc(sizeof(char) * data_size);
 	memset(data, 0xff, data_size);
 
-#ifdef I2C_OPEN
-	/*Opening and setting file descriptor   */
-	fd = get_device(&current_fw_ver, device_num, tech);
-	if (fd < 0) {
-		fprintf(stderr, "cannot find Wacom i2c device\n");
-		ret = fd;
-		goto exit;
-	}
 
-	if (active_fw_check) {
-		ret = 0;
-		printf("%d\n", current_fw_ver);
-		goto exit;
-	} 
-
-#ifdef WACOM_DEBUG_LV1
-	fprintf(stderr, "%s current_fw: 0x%x \n", __func__, current_fw_ver);
-#endif
-
-#endif
 
 #ifdef FILE_READ
 
