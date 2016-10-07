@@ -787,8 +787,8 @@ int main(int argc, char *argv[])
 	UBL_PROCESS *pUBLProcess = NULL;
 
 	if (argc != 4){
-		fprintf(stderr,  "Usage: $wac_flash [target file name] [type] [i2c-device path]\n");
-		fprintf(stderr,  "Ex: $wac_flash W9013_056.hex -r i2c-1 \n");
+		fprintf(stderr,  "Usage: $wacom_flash [firmware filename] [type] [i2c-device path]\n");
+		fprintf(stderr,  "Ex: $wacom_flash W9013_056.hex -r i2c-1 \n");
 		ret = -EXIT_NOFILE;
 		goto exit;
 	}
