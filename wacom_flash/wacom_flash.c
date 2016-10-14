@@ -449,7 +449,7 @@ bool flash_write_w9013(int fd, char *flash_data,
 	j = 0;
 	for (ulAddress = start_address; ulAddress < *max_address; ulAddress += FLASH_BLOCK_SIZE) {
 		for (i = 0; i < FLASH_BLOCK_SIZE; i++) {
-			if (flash_data[ulAddress+i] != 0xFF)
+			if ((u8)(flash_data[ulAddress+i]) != 0xFF)
 				break;
 		}
 		if (i == (FLASH_BLOCK_SIZE))
@@ -853,9 +853,9 @@ int main(int argc, char *argv[])
 #ifdef FILE_READ
 
 #ifdef WACOM_DEBUG_LV1
-	fprintf(stderr, "Reading hex file... \n");
+	fprintf(stderr, "Reading hex file: %s... \n", argv[1]);
 #endif
-	fp = fopen(FW_LINK_PATH, "rb");
+	fp = fopen(argv[1], "rb");  /* FW_LINK_PATH */
 	if (fp == NULL) {
 		fprintf(stderr, "the file name is invalid or does not exist \n");
 		goto err;
