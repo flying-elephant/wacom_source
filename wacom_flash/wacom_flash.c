@@ -889,7 +889,7 @@ int main(int argc, char *argv[])
 		goto err;
 	}
 
-	fprintf(stderr,  "Flashed firmware : %x \n", current_fw_ver);
+	fprintf(stderr,  "Flashed firmware : %d \n", current_fw_ver);
 #endif
 
 	ret = 0;
