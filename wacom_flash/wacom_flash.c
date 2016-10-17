@@ -511,12 +511,12 @@ int wacom_i2c_flash_w9013(int fd, char *flash_data)
 		return -EXIT_FAIL_GET_MPU_TYPE;
 	}
 	if (iMpuType != MPU_W9013) {
-		fprintf(stderr, "MPU is not for W9013 : %x \n", iMpuType);
+		fprintf(stderr, "MPU is not for W9013 : 0x%x \n", iMpuType);
 		return -EXIT_FAIL_GET_MPU_TYPE;
 	}
 
 #ifdef WACOM_DEBUG_LV1
-	fprintf(stderr, "MPU type: %x \n", iMpuType);	
+	fprintf(stderr, "MPU type: 0x%x \n", iMpuType);	
 #endif	
 	/*-----------------------------------*/
 	/*Flashing operation starts from here*/
@@ -747,7 +747,7 @@ int get_device(int *current_fw_ver, char *device_num, int *tech)
 		ret = get_hid_desc(fd, addr);
 		if (ret == 0) {
 			*tech = (addr == EMR_I2C_ADDR) ? TECH_EMR : TECH_AES;
-			fprintf(stderr, "%s found: addr %x \n", (*tech == TECH_EMR) ? "EMR" : "AES", addr);
+			fprintf(stderr, "%s found: addr 0x%x \n", (*tech == TECH_EMR) ? "EMR" : "AES", addr);
 
 			break;
 		}
@@ -889,7 +889,7 @@ int main(int argc, char *argv[])
 		goto err;
 	}
 
-	fprintf(stderr,  "Flashed firmware : %x \n", current_fw_ver);
+	fprintf(stderr,  "Flashed firmware : %d \n", current_fw_ver);
 #endif
 
 	ret = 0;
