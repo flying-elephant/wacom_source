@@ -649,7 +649,7 @@ PID:0x%x wVer:0x%x ResvH:%d ResvL%d\n",
 	       hid_descriptor.RESERVED_LOW);
 }
 
-int get_hid_desc(int fd, char addr)
+int get_hid_desc(int fd, char addr, unsigned int *pid)
 {
 	struct i2c_rdwr_ioctl_data packets;
 	HID_DESC hid_descriptor;		
@@ -678,6 +678,7 @@ int get_hid_desc(int fd, char addr)
 		goto out;
 	}
 
+	*pid = hid_descriptor.wProductID;
 	show_hid_descriptor(hid_descriptor);
 
 	ret = 0;
@@ -721,7 +722,7 @@ int wacom_gather_info(int fd, int *fw_ver, int tech)
 	return ret;
 }
 
-int get_device(int *current_fw_ver, char *device_num, int *tech)
+int get_device(int *current_fw_ver, unsigned int *pid, char *device_num, int *tech)
 {
 	int fd = -1;
 	int ret = -1;
@@ -744,7 +745,7 @@ int get_device(int *current_fw_ver, char *device_num, int *tech)
 			goto exit;
 		}
 
-		ret = get_hid_desc(fd, addr);
+		ret = get_hid_desc(fd, addr, pid);
 		if (ret == 0) {
 			*tech = (addr == EMR_I2C_ADDR) ? TECH_EMR : TECH_AES;
 			fprintf(stderr, "%s found: addr 0x%x \n", (*tech == TECH_EMR) ? "EMR" : "AES", addr);
@@ -772,6 +773,7 @@ int get_device(int *current_fw_ver, char *device_num, int *tech)
 int main(int argc, char *argv[])
 {
 	unsigned long maxAddr = 0;
+	unsigned int pid = 0;
 	int fd = -1;
 	int ret = -1;
 	int current_fw_ver = -1;
@@ -781,6 +783,7 @@ int main(int argc, char *argv[])
 	char device_num[64] = {0};
 	bool active_fw_check = false;
 	bool force_flash = false;
+	bool pid_check = false;
 
 	FILE *fp;
 	UBL_STATUS *pUBLStatus = NULL;
@@ -796,6 +799,9 @@ int main(int argc, char *argv[])
 	if (!strcmp(argv[2], "-a")) {
 		fprintf(stderr,  "Returning active firmware version only\n");
 		active_fw_check = true;
+	} else if (!strcmp(argv[2], "-p")) {
+		fprintf(stderr,  "Returning PID only\n");
+		pid_check = true;
 	} else if (!strcmp(argv[2], FLAGS_RECOVERY_TRUE)) {
 		force_flash = true;
 	} else if (!strcmp(argv[2], FLAGS_RECOVERY_FALSE)) {
@@ -810,7 +816,7 @@ int main(int argc, char *argv[])
 
 #ifdef I2C_OPEN
 	/*Opening and setting file descriptor   */
-	fd = get_device(&current_fw_ver, device_num, &tech);
+	fd = get_device(&current_fw_ver, &pid, device_num, &tech);
 	if (fd < 0) {
 		fprintf(stderr, "cannot find Wacom i2c device\n");
 		ret = fd;
@@ -821,7 +827,11 @@ int main(int argc, char *argv[])
 		ret = 0;
 		printf("%d\n", current_fw_ver);
 		goto exit;
-	} 
+	} else if (pid_check) {
+		ret = 0;
+		printf("%u\n", pid);
+		goto exit;
+	}
 
 #ifdef WACOM_DEBUG_LV1
 	fprintf(stderr, "%s current_fw: 0x%x \n", __func__, current_fw_ver);
@@ -847,7 +857,6 @@ int main(int argc, char *argv[])
 
 	data = (char *)malloc(sizeof(char) * data_size);
 	memset(data, 0xff, data_size);
-
 
 
 #ifdef FILE_READ
