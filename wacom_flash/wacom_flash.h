@@ -131,6 +131,7 @@ u32 g_ErrorCode;
 
 #define DATA_SIZE               (65536 * 2)
 #define HEX_READ_ERR            -1
+#define HEX_OLD_FIRMWARE        -2
 #define ASCII_EOF               0x1A
 #define ACK			0
 
@@ -252,20 +253,23 @@ u32 g_ErrorCode;
 #define AES_I2C_ADDR            0x0a
 #define TOUCH_CMD_QUERY         0x04
 #define TOUCH_QUERY_SIZE        16
-#define GET_AES_QUERY     0x05
-#define AES_QUERY_SIZE    9
+#define GET_AES_QUERY           0x05
+#define AES_QUERY_SIZE          9
 
 #define AES_FW_BASE             0x100
 #define AES_FW_BLK              4
 #define AES_REV_BLK             5
 
 #define UBL_MAIN_ADDRESS	        0x8000
-
-#define UBL_MAIN_SIZE		        (0x2bfff + 1)
+#define UBL_MAIN_SIZE		        0x2bfff
+#define UBL_NEW_SIZE                    0x2b7ff
+#define UBL_MAX_ROM_SIZE_OLD            0x23fff
+#define UBL_MAX_ROM_SIZE                0x237ff
 #define UBL_ROM_SIZE		        0x30000	
 #define UBL_CMD_SIZE_G11T	        (256 + 1)	// with report id
 #define UBL_RSP_SIZE_G11T	        (135 + 1)	// with report id
 #define UBL_G11T_CMD_DATA_SIZE	        128     // writing in 128 byte chunks
+#define UBL_END_BLOCK                   70
 
 #define UBL_TIMEOUT_WRITE	        1000
 #define UBL_RETRY_NUM		        3
@@ -283,15 +287,13 @@ u32 g_ErrorCode;
 #define UBL_WRITE			0x01	// regular writing
 #define UBL_FORCEWRITE			0x02	// force-writing by ignoring device states
 
+#define EXIT_RETRY                      10
+
 // Returned values
 #define UBL_OK				0x00
 #define UBL_ERROR			0x01
 
 #define UBL_G11T_UBL_PID	        0x0094
-
-//! Base address for merged FW
-#define UBL_G11T_BASE_FLASH_ADDRESS	0x8000
-#define UBL_G11T_MAX_FLASH_ADDRESS	0x2bfff
 
 // bootloader commands
 #define UBL_COM_WRITE			0x01
@@ -299,7 +301,23 @@ u32 g_ErrorCode;
 #define UBL_COM_GETBLVER		0x04
 #define UBL_COM_GETMPUTYPE		0x05
 #define UBL_COM_CHECKMODE		0x07
+#define UBL_COM_BLOCKERASE              0x00
 #define UBL_COM_ALLERASE		0x90
+#define UBL_CMD_SET_HWID_REPORT_ID      0x07
+#define UBL_CMD_GET_HWID_REPORT_ID      0x08
+
+#define UBL_CMD_SETHWID_REPTID_SIZE     257
+#define UBL_CMD_GETHWID_REPTID_SIZE     136
+
+#define UBL_HWID_COMMAND                0x02
+#define UBL_HWID_ECHO                   0x56
+#define UBL_HWID_ADDRESS                0x2b800
+#define UBL_HWID_PID_ADDRESS            0x2b808
+
+#define UBL_HWID_MAGIC_WORD1            0x1234
+#define UBL_HWID_MAGIC_WORD2            0x5678
+#define UBL_HWID_MAGIC_WORD3            0x8765
+#define UBL_HWID_MAGIC_WORD4            0x4321
 
 // bootloader responses
 #define UBL_RES_OK			0x00
@@ -333,7 +351,7 @@ typedef struct{
 
 typedef struct{
 	unsigned int process;
-	unsigned char data[UBL_MAIN_SIZE];
+	unsigned char data[(UBL_MAIN_SIZE + 1)];
 	unsigned long start_adrs;
 	unsigned long size;
 	unsigned int pid;
@@ -350,6 +368,8 @@ typedef struct{
 	bool auto_conf;
 	bool statusbar;
 	bool dialog;
+	bool erase_all;
+	bool force_flash;
 } UBL_PROCESS;
 
 
@@ -446,6 +466,8 @@ typedef union
 } boot_rsp;
 #pragma pack(pop)
 
+u8 hw_magicword[8];
+
 bool wacom_i2c_set_feature(int fd, u8 report_id, unsigned int buf_size, u8 *data, 
 			   u16 cmdreg, u16 datareg);
 bool wacom_i2c_get_feature(int fd, u8 report_id, unsigned int buf_size, u8 *data, 
@@ -453,4 +475,5 @@ bool wacom_i2c_get_feature(int fd, u8 report_id, unsigned int buf_size, u8 *data
 int read_hex(FILE *fp, char *flash_data, size_t data_size, unsigned long *max_address,
 	     UBL_PROCESS *pUBLProcess, UBL_STATUS *pUBLStatus, int tech);
 int wacom_flash_aes(int fd, char *data, UBL_STATUS *pUBLStatus, UBL_PROCESS *pUBL_PROCESS);
+unsigned int get_aes_blid(int fd, char *data, UBL_STATUS *pUBLStatus, UBL_PROCESS *pUBL_PROCESS);
 #endif

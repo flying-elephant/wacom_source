@@ -173,7 +173,7 @@ bool wacom_check_data( UBL_PROCESS *pUBLProcess, UBL_STATUS *pUBLStatus)
 {
 
 	// Checking start address
-	if ( pUBLProcess->start_adrs != UBL_G11T_BASE_FLASH_ADDRESS ){
+	if ( pUBLProcess->start_adrs != UBL_MAIN_ADDRESS ){
 		fprintf(stderr, "%s failed \n", __func__);
 		fprintf(stderr, "Data error. Start at 0x%05x.\n", (unsigned int)pUBLProcess->start_adrs );
 
@@ -181,7 +181,7 @@ bool wacom_check_data( UBL_PROCESS *pUBLProcess, UBL_STATUS *pUBLStatus)
 	}
 
 	// checking the total firmware size
-	if ( (pUBLProcess->start_adrs + pUBLProcess->size) > (UBL_G11T_MAX_FLASH_ADDRESS + 1) ){
+	if ( (pUBLProcess->start_adrs + pUBLProcess->size) > (UBL_MAIN_SIZE + 1) ){
 		fprintf(stderr, "%s failed \n", __func__);
 		fprintf(stderr, "Data size error. Size is 0x%05x. \n", (unsigned int)pUBLProcess->size );
 
@@ -191,61 +191,75 @@ bool wacom_check_data( UBL_PROCESS *pUBLProcess, UBL_STATUS *pUBLStatus)
 	return true;
 }
 
-
 bool wacom_erase_all(int fd,  UBL_PROCESS *pUBLProcess, UBL_STATUS *pUBLStatus)
 {
 	bool bRet = false;
 	boot_cmd command;
 	boot_rsp response;
+	unsigned int max_block = UBL_END_BLOCK;
+	int i = 0;
 
 	memset(&command, 0, sizeof(boot_cmd));
 	memset(&response, 0, sizeof(boot_rsp));
 
 	command.erase_flash.reportId = UBL_CMD_REPORT_ID;
-	command.erase_flash.cmd = UBL_COM_ALLERASE;	// erase all flash
-	command.erase_flash.echo = 1;
-	command.erase_flash.blkNo = 0;
+	command.erase_flash.cmd = UBL_COM_BLOCKERASE;	// erase all flash
 
-	bRet = wacom_i2c_set_feature(fd, UBL_CMD_REPORT_ID, UBL_CMD_SIZE_G11T, command.data,
-				     COMM_REG, DATA_REG);
-	if ( bRet == false ){
-		fprintf(stderr, "%s failed \n", __func__);
-		return false;
-	}
+	if (pUBLProcess->erase_all)
+		max_block += 1;
 
-	usleep(2000 * MILLI);	// wait for 2 seconds
+	/*Erase blocks from 0 up to 70 (including) when not force_flash*/
+	/*otehrwise set to 71*/
+	for (i = 0; i <= max_block; i++) {
+		command.erase_flash.echo = i;
+		command.erase_flash.blkNo = i;
 
-	response.erase_flash.reportId = UBL_RSP_REPORT_ID;
-	response.header.resp = UBL_RES_BUSY;	// busy
+		bRet = wacom_i2c_set_feature(fd, UBL_CMD_REPORT_ID, UBL_CMD_SIZE_G11T, command.data,
+					     COMM_REG, DATA_REG);
+		if (!bRet) {
+			fprintf(stderr, "%s failed \n", __func__);
+			return false;
+		}
+		
+		response.erase_flash.reportId = UBL_RSP_REPORT_ID;
+		response.header.resp = UBL_RES_BUSY;	// busy
+		
+		while(bRet && (response.header.resp == UBL_RES_BUSY)) {
+			bRet = wacom_i2c_get_feature(fd, UBL_RSP_REPORT_ID, UBL_RSP_SIZE_G11T, response.data,
+						     COMM_REG, DATA_REG, AES_I2C_ADDR);
+		}
 
-	while(bRet && (response.header.resp == UBL_RES_BUSY)) {
-		bRet = wacom_i2c_get_feature(fd, UBL_RSP_REPORT_ID, UBL_RSP_SIZE_G11T, response.data,
-					     COMM_REG, DATA_REG, AES_I2C_ADDR);
-	}
+		if (!bRet) {
+			fprintf(stderr, "%s failed \n", __func__);
+			return false;
+		}
 
-	if (!bRet) {
-		fprintf(stderr, "%s failed \n", __func__);
-		return false;
-	}
-
-	if(response.header.resp != UBL_RES_OK) {
-		fprintf(stderr, "%s failed \n", __func__);
-		return false;
+		if(response.header.resp != UBL_RES_OK 
+		   || response.header.echo != command.erase_flash.echo) {
+			fprintf(stderr, "%s failed \n", __func__);
+			return false;
+		}
 	}
 
 	return true;
 }
 
-bool wacom_send_data(int fd, unsigned char com, unsigned char *data, unsigned long start_adrs, unsigned long size, UBL_STATUS *pUBLStatus )
+bool wacom_send_data(int fd, unsigned char com, unsigned char *data, unsigned long start_adrs, 
+		     unsigned long size, bool force_flash, UBL_STATUS *pUBLStatus)
 {
 	unsigned int i, j;
+	unsigned int max_size = UBL_NEW_SIZE;
 	bool bRet = false;
 	boot_cmd command;
 	boot_rsp response;
 	unsigned char command_id = 0;
 
+	if (force_flash) {
+		max_size =  UBL_MAIN_SIZE;
+	}
+
 	// g_FlashBlockSize - global variable containing size of one data block in read/write report
-	for (i = 0; i < (UBL_G11T_MAX_FLASH_ADDRESS + 1) / UBL_G11T_CMD_DATA_SIZE; i++)	{
+	for (i = 0; i < (max_size + 1) / UBL_G11T_CMD_DATA_SIZE; i++)	{
 		if ( i * UBL_G11T_CMD_DATA_SIZE >= size ){
 			break;
 		}
@@ -259,7 +273,7 @@ bool wacom_send_data(int fd, unsigned char com, unsigned char *data, unsigned lo
 		command.write_flash.echo = ++command_id;
 		command.write_flash.addr = (u32)(start_adrs + i * UBL_G11T_CMD_DATA_SIZE);
 		command.write_flash.size8 = UBL_G11T_CMD_DATA_SIZE / 8;
-				
+
 		// Copy g_FlashRepDataSize bytes to report
 		for ( j = 0; j < UBL_G11T_CMD_DATA_SIZE; j++ ){
 			command.write_flash.data[j] = *(data + i * UBL_G11T_CMD_DATA_SIZE + j);
@@ -352,15 +366,117 @@ bool wacom_write(int fd, UBL_PROCESS *pUBLProcess, UBL_STATUS *pUBLStatus )
 	// Writing firmware
 #ifdef WACOM_DEBUG_LV1
 	fprintf(stderr, "Write start. \n");
-	fprintf(stderr, "WRITE address:0x%x size:0x%x checksum:0x%x \n", (unsigned int)pUBLProcess->start_adrs, 
-	       (unsigned int)pUBLProcess->size, (unsigned int)pUBLProcess->checksum );
+	fprintf(stderr, "WRITE address:0x%x size:0x%x \n", (unsigned int)pUBLProcess->start_adrs, 
+	       (unsigned int)pUBLProcess->size);
 #endif
-	if ( wacom_send_data(fd, UBL_COM_WRITE, pUBLProcess->data, pUBLProcess->start_adrs, pUBLProcess->size, pUBLStatus ) == false ){
+	if ( wacom_send_data(fd, UBL_COM_WRITE, pUBLProcess->data, pUBLProcess->start_adrs, 
+			     pUBLProcess->size, pUBLProcess->force_flash, pUBLStatus ) == false ){
 		fprintf(stderr, "%s failed \n", __func__);
 		return false;
 	}
 
 	return true;
+}
+
+bool comparing_id(int fd, u32 address, unsigned char *id)
+{
+	bool bRet = false;
+	u8 set_data[UBL_CMD_SETHWID_REPTID_SIZE] = {0};
+	u8 get_data[UBL_CMD_GETHWID_REPTID_SIZE] = {0};
+
+	set_data[0] = UBL_CMD_SET_HWID_REPORT_ID;
+	set_data[1] = UBL_HWID_COMMAND;
+	set_data[2] = UBL_HWID_ECHO;
+	set_data[3] = address & 0x000000ff;
+	set_data[4] = (address & 0x0000ff00) >> 8;
+	set_data[5] = (address & 0x00ff0000) >> 16;
+	set_data[6] = (address & 0xff000000) >> 24;
+      	set_data[7] = 1; /*8 bytes * 1(data[7]) times to compare*/
+	memcpy((set_data + 8), id, 8);
+
+	bRet = wacom_i2c_set_feature(fd, UBL_CMD_SET_HWID_REPORT_ID,
+				     UBL_CMD_SETHWID_REPTID_SIZE, set_data, COMM_REG, DATA_REG);
+	if (!bRet) {
+		fprintf(stderr, "Claiming Hardware ID report failed \n");
+		goto out;
+	}
+
+	bRet = wacom_i2c_get_feature(fd, UBL_CMD_GET_HWID_REPORT_ID,
+				     UBL_CMD_GETHWID_REPTID_SIZE, get_data, COMM_REG, DATA_REG, AES_I2C_ADDR);
+	if (!bRet) {
+		fprintf(stderr, "Getting Hardware ID report failed \n");
+		goto out;
+	}
+
+	if ((get_data[0] != UBL_CMD_GET_HWID_REPORT_ID) || (get_data[1] != UBL_HWID_COMMAND) ||
+	    (get_data[2] != UBL_HWID_ECHO) || (get_data[3] != 0)) {
+		fprintf(stderr, "Data back from get-feature is not with correct values\n");
+		bRet = false;
+		goto out;
+	}
+
+ out:
+	return bRet;
+}
+
+bool check_hw_compatibility(int fd, char *data, UBL_STATUS *pUBLStatus, 
+			    UBL_PROCESS *pUBLProcess)
+{
+	bool bRet = false;
+	unsigned int base_addr_pid = (UBL_HWID_PID_ADDRESS - UBL_MAIN_ADDRESS);
+	unsigned char id[8] = {0};
+	int i = 0;
+
+	for (i = 0; i < 8; i ++)
+		id[i] = data[base_addr_pid + i];
+
+	if (wacom_enter_ubl(fd) == false ){
+		fprintf(stderr, "entering user boot loader error. \n");
+		goto err;
+	}
+
+	/*Check if the device successfully entered in UBL mode*/
+	for ( i = 0; i < 5/*UBL_RETRY_NUM*/; i++ ){
+		usleep(200 * MILLI);
+
+		bRet = wacom_check_mode(fd, pUBLStatus );
+		if (bRet)
+			break;
+		else
+			goto out;
+
+		pUBLStatus->ret = UBL_OK; /*Resetting the return status*/
+		usleep(200 * MILLI);
+	}
+
+	bRet = comparing_id(fd, UBL_HWID_ADDRESS, hw_magicword);
+	if (!bRet) {
+		fprintf(stderr, "hwid is not supported; force-write is set \n");
+		bRet = pUBLProcess->force_flash = true;
+		goto out;
+	}
+
+	/*If hardware-id is supported, then check VID and PID*/
+	bRet = comparing_id(fd, UBL_HWID_PID_ADDRESS, id);
+	if (!bRet) {
+		fprintf(stderr, "This Wacom hardware cannot be used with this firmware \n");
+		goto out;
+	}
+
+	printf("Correct firmware to write on\n");
+ out:
+	for (i = 0; i < EXIT_RETRY; i++) {
+		if (wacom_exit_ubl(fd, pUBLStatus)) {
+			fprintf(stderr, "exiting bootloader succeeded\n");
+			break;
+		} else {
+			fprintf(stderr, "exiting boot mode failed\n");
+			fprintf(stderr, "%d st attempt\n", (i + 1));
+		}
+	}
+
+ err:
+	return bRet;
 }
 
 //! G11T programming thread
@@ -371,10 +487,26 @@ int wacom_flash_aes(int fd, char *data, UBL_STATUS *pUBLStatus, UBL_PROCESS *pUB
 	int ret = -1;
 	bool bRet = false;
 
+	/*If a firmware on a device doesn't have the area of hardware id, then do not return*/
+	/*, but write over. On the other hand, if a firmware on a device doesn't match to that*/
+	/* on disk, then never try to write over, but just quit.*/
+	bRet = check_hw_compatibility(fd, data, pUBLStatus, pUBLProcess);
+	if (!bRet) {
+		fprintf(stderr, "%s This Wacom hardware doesn't support firmware on disk\n",
+			__func__);
+		goto err;
+	}
+
+	if (pUBLProcess->force_flash) {
+		/*If the connected device has the old firmware,*/
+		/*erase all rom area and overwrite them all at the size*/
+		pUBLProcess->size = (UBL_MAX_ROM_SIZE_OLD + 1);
+		pUBLProcess->erase_all = true;
+	}
+
 	for ( i = 0; i < pUBLProcess->size; i++ ){
 		pUBLProcess->data[i] = data[i];
 	}
-
 
 #ifdef GETDATA
 	i = 0;

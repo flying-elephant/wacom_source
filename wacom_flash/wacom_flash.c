@@ -1,4 +1,17 @@
 #include "wacom_flash.h"
+ 
+/*Use this array to compare the magic words which come with*/
+/*a firmware binary*/
+u8 hw_magicword[8] = {
+	(UBL_HWID_MAGIC_WORD1 & 0x00ff),
+	(UBL_HWID_MAGIC_WORD1 & 0xff00) >> 8,
+	(UBL_HWID_MAGIC_WORD2 & 0x00ff),
+	(UBL_HWID_MAGIC_WORD2 & 0xff00) >> 8,
+	(UBL_HWID_MAGIC_WORD3 & 0x00ff),
+	(UBL_HWID_MAGIC_WORD3 & 0xff00) >> 8,
+	(UBL_HWID_MAGIC_WORD4 & 0x00ff),
+	(UBL_HWID_MAGIC_WORD4 & 0xff00) >> 8,
+};
 
 bool wacom_i2c_set_feature(int fd, u8 report_id, unsigned int buf_size, u8 *data, 
 			   u16 cmdreg, u16 datareg)
@@ -49,8 +62,7 @@ bool wacom_i2c_set_feature(int fd, u8 report_id, unsigned int buf_size, u8 *data
 }
 
 /*get_feature uses ioctl for using I2C restart method to communicate*/
-/*and for that i2c_msg requires "char" for buf rather than unsinged char,*/
-/*so storing data should be back as "unsigned char".*/
+/*and for that i2c_msg requires "char" for buf rather than unsinged char*/
 bool wacom_i2c_get_feature(int fd, u8 report_id, unsigned int buf_size, u8 *data, 
 		 u16 cmdreg, u16 datareg, char addr)
 
@@ -722,11 +734,12 @@ int wacom_gather_info(int fd, int *fw_ver, int tech)
 	return ret;
 }
 
-int get_device(int *current_fw_ver, unsigned int *pid, char *device_num, int *tech)
+int get_device(int *current_fw_ver, char *device_num, int *tech)
 {
 	int fd = -1;
 	int ret = -1;
 	int i;
+	unsigned int pid = 0; //2017/01/17 leave pid for the time when needed
 	char addr = EMR_I2C_ADDR;
 
 	/*Wacom I2C device can be with an address either 0x09(EMR) or 0x0a(touch&AES)*/
@@ -745,7 +758,7 @@ int get_device(int *current_fw_ver, unsigned int *pid, char *device_num, int *te
 			goto exit;
 		}
 
-		ret = get_hid_desc(fd, addr, pid);
+		ret = get_hid_desc(fd, addr, &pid);
 		if (ret == 0) {
 			*tech = (addr == EMR_I2C_ADDR) ? TECH_EMR : TECH_AES;
 			fprintf(stderr, "%s found: addr 0x%x \n", (*tech == TECH_EMR) ? "EMR" : "AES", addr);
@@ -770,10 +783,10 @@ int get_device(int *current_fw_ver, unsigned int *pid, char *device_num, int *te
 	return ret;
 
 }
+
 int main(int argc, char *argv[])
 {
 	unsigned long maxAddr = 0;
-	unsigned int pid = 0;
 	int fd = -1;
 	int ret = -1;
 	int current_fw_ver = -1;
@@ -783,7 +796,6 @@ int main(int argc, char *argv[])
 	char device_num[64] = {0};
 	bool active_fw_check = false;
 	bool force_flash = false;
-	bool pid_check = false;
 
 	FILE *fp;
 	UBL_STATUS *pUBLStatus = NULL;
@@ -791,7 +803,7 @@ int main(int argc, char *argv[])
 
 	if (argc != 4){
 		fprintf(stderr,  "Usage: $wacom_flash [firmware filename] [type] [i2c-device path]\n");
-		fprintf(stderr,  "Ex: $wacom_flash W9013_056.hex -r i2c-1 \n");
+		fprintf(stderr,  "Ex: $wacom_flash W9013_056.hex -a i2c-1 \n");
 		ret = -EXIT_NOFILE;
 		goto exit;
 	}
@@ -799,9 +811,6 @@ int main(int argc, char *argv[])
 	if (!strcmp(argv[2], "-a")) {
 		fprintf(stderr,  "Returning active firmware version only\n");
 		active_fw_check = true;
-	} else if (!strcmp(argv[2], "-p")) {
-		fprintf(stderr,  "Returning PID only\n");
-		pid_check = true;
 	} else if (!strcmp(argv[2], FLAGS_RECOVERY_TRUE)) {
 		force_flash = true;
 	} else if (!strcmp(argv[2], FLAGS_RECOVERY_FALSE)) {
@@ -816,7 +825,7 @@ int main(int argc, char *argv[])
 
 #ifdef I2C_OPEN
 	/*Opening and setting file descriptor   */
-	fd = get_device(&current_fw_ver, &pid, device_num, &tech);
+	fd = get_device(&current_fw_ver, device_num, &tech);
 	if (fd < 0) {
 		fprintf(stderr, "cannot find Wacom i2c device\n");
 		ret = fd;
@@ -827,11 +836,7 @@ int main(int argc, char *argv[])
 		ret = 0;
 		printf("%d\n", current_fw_ver);
 		goto exit;
-	} else if (pid_check) {
-		ret = 0;
-		printf("%u\n", pid);
-		goto exit;
-	}
+	} 
 
 #ifdef WACOM_DEBUG_LV1
 	fprintf(stderr, "%s current_fw: 0x%x \n", __func__, current_fw_ver);
@@ -853,14 +858,15 @@ int main(int argc, char *argv[])
 		memset(pUBLProcess, 0, sizeof(UBL_PROCESS) );
 		pUBLProcess->start_adrs = 0;//UBL_G11T_BASE_FLASH_ADDRESS;
 		pUBLProcess->process = 0;	
+		pUBLProcess->size = (UBL_MAX_ROM_SIZE + 1);	
+		pUBLProcess->erase_all = false;	
+		pUBLProcess->force_flash = false;	
 	}
 
 	data = (char *)malloc(sizeof(char) * data_size);
 	memset(data, 0xff, data_size);
 
-
 #ifdef FILE_READ
-
 #ifdef WACOM_DEBUG_LV1
 	fprintf(stderr, "Reading hex file: %s... \n", argv[1]);
 #endif
@@ -871,7 +877,7 @@ int main(int argc, char *argv[])
 	}
 
 	ret = read_hex(fp, data, data_size, &maxAddr, pUBLProcess, pUBLStatus, tech);
-	if (ret == HEX_READ_ERR) {
+	if (ret == HEX_READ_ERR || ret == HEX_OLD_FIRMWARE) {
 		fprintf(stderr, "reading the hex file failed\n");
 		fclose(fp);
 		goto err;

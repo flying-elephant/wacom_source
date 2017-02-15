@@ -2,7 +2,6 @@
 
 void show_result(int size, int start_addr, long max_addr, char *data)
 {
-
 #ifdef WACOM_DEBUG_LV3
 	int i = 0;
 	for (i = 0; i < size; i++) {
@@ -18,21 +17,19 @@ void show_result(int size, int start_addr, long max_addr, char *data)
 	return;
 }
 
-//int read_hex(FILE *fp, unsigned char *flash_data, size_t data_size, unsigned long *max_address)
 int read_hex(FILE *fp, char *flash_data, size_t data_size, unsigned long *max_address,
 	     UBL_PROCESS *pUBLProcess, UBL_STATUS *pUBLStatus, int tech)
 {
-	int i, s;
+	int s;
 	int fd = -1;
 	int ret = -1;
-	unsigned int checksum = 0;
 	unsigned long expand_address = 0;
 	unsigned long startLinearAddress = 0;
 	unsigned long count = 0;
-	unsigned long file_size = 0;  
+	unsigned long file_size = 0;
 	unsigned long start_address = (unsigned long)-1;
 	struct stat stat;
-	
+
 	if (tech == TECH_AES)
 		pUBLProcess->data_en = false;
 
@@ -391,7 +388,7 @@ int read_hex(FILE *fp, char *flash_data, size_t data_size, unsigned long *max_ad
 		}
 	}
 
-	if (tech == TECH_AES) {	
+	if (tech == TECH_AES) {
 		if ( *max_address >= UBL_MAIN_SIZE ){
 			fprintf(stderr, "File size error. \n");
 			return -ERR;
@@ -399,23 +396,29 @@ int read_hex(FILE *fp, char *flash_data, size_t data_size, unsigned long *max_ad
 
 		if ( start_address != UBL_MAIN_ADDRESS ){
 			fprintf(stderr, "Start address error. \n");
-			fprintf(stderr, "returning to main()\n");
 			return -ERR;
 		}
 
-		pUBLProcess->start_adrs = start_address;
-		pUBLProcess->size = *max_address + 1;
+		/*Check if the firmware on disk has the older structure of the firmware*/
+		{
+			unsigned int base_addr_mgcid = UBL_HWID_ADDRESS - UBL_MAIN_ADDRESS;
+			unsigned char id[8] = {flash_data[base_addr_mgcid],
+					       flash_data[base_addr_mgcid + 1],
+					       flash_data[base_addr_mgcid + 2],
+					       flash_data[base_addr_mgcid + 3],
+					       flash_data[base_addr_mgcid + 4],
+					       flash_data[base_addr_mgcid + 5],
+					       flash_data[base_addr_mgcid + 6],
+					       flash_data[base_addr_mgcid + 7]};
 
-		//Calculating checksum
-		checksum = 0;
-		for ( i = 0; i < pUBLProcess->size; i++ ){
-			checksum = checksum + flash_data[i];
+			if (memcmp(id, hw_magicword, 8)) {
+				fprintf(stderr, "Error: This firmware on disk doesn't have magic words. \n");
+				return HEX_OLD_FIRMWARE;
+			}
 		}
 
-		checksum = checksum & 0xFFFF;
-		pUBLProcess->checksum = checksum;
+		pUBLProcess->start_adrs = start_address;
 #ifdef WACOM_DEBUG_LV1
-		fprintf(stderr, "Checksum: 0x%x \n", (unsigned int)checksum);
 		show_result(pUBLProcess->size, start_address, *max_address, (char *)pUBLProcess->data);
 #endif
 		pUBLProcess->data_en = true;
