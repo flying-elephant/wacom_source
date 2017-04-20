@@ -691,7 +691,10 @@ int get_hid_desc(int fd, char addr, unsigned int *pid)
 	}
 
 	*pid = hid_descriptor.wProductID;
+
+#ifdef SHOW_DESC
 	show_hid_descriptor(hid_descriptor);
+#endif
 
 	ret = 0;
  out:
@@ -723,12 +726,33 @@ int wacom_gather_info(int fd, int *fw_ver, int tech)
 
 	bRet = wacom_i2c_get_feature(fd, report_id, report_size,
 				     (u8 *)data, COMM_REG, DATA_REG, addr);
-	if ( bRet == false ){
+	if ( bRet == false ) {
 		fprintf(stderr, "cannot get data query \n");
-		goto out;
 	}
 
 	*fw_ver = parse_active_fw_version(data, tech);
+
+	/*Check if the device is in boot-mode when the version is '0'.*/
+	/*if it is, turn it back to user-mode and try to get the firmware version agian*/
+	if (*fw_ver == 0) {
+		bool mode_boot = false;
+		bool bRet = false;
+
+		switch (tech) {
+		case TECH_EMR:
+			mode_boot = (bool)!flash_query_w9013(fd);
+			break;
+
+		case TECH_AES:
+			mode_boot = wacom_check_mode(fd);
+			break;
+		}
+
+		if (mode_boot)
+			*fw_ver = 1;
+
+	}
+
 	ret = 0;
  out:
 	return ret;

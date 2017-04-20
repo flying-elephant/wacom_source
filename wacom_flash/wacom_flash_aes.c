@@ -1,6 +1,6 @@
 #include "wacom_flash.h"
 
-bool wacom_send_cmd(int fd, boot_cmd *command, boot_rsp *response, UBL_STATUS *pUBLStatus )
+bool wacom_send_cmd(int fd, boot_cmd *command, boot_rsp *response)
 {
 	bool bRet =false;
 	unsigned int i;
@@ -57,7 +57,6 @@ bool wacom_send_cmd(int fd, boot_cmd *command, boot_rsp *response, UBL_STATUS *p
 		// Command that generally returns "OK" response is treated as an error
 		if ( ((command->header.cmd == UBL_COM_WRITE ) || (command->header.cmd == UBL_COM_ALLERASE))
 			&& (response->header.resp != UBL_RES_OK) ){
-			pUBLStatus->response = response->header.resp;
 			fprintf(stderr,"Error response:%d at command:%d \n", response->header.resp, command->header.cmd );
 			return false;
 		}
@@ -88,7 +87,7 @@ bool wacom_enter_ubl(int fd)
 }
 
 // Switch back to normal device
-bool wacom_exit_ubl(int fd, UBL_STATUS *pUBLStatus )
+bool wacom_exit_ubl(int fd)
 {
 	boot_cmd command;
 	boot_rsp response;
@@ -97,7 +96,7 @@ bool wacom_exit_ubl(int fd, UBL_STATUS *pUBLStatus )
 	memset(&response, 0, sizeof(boot_rsp));	
 
 	command.header.cmd = UBL_COM_EXIT;
-	if ( wacom_send_cmd(fd, &command, &response, pUBLStatus ) == false ){
+	if ( wacom_send_cmd(fd, &command, &response) == false ){
 		fprintf(stderr, "%s exiting user boot loader failed \n", __func__);
 		return false;
 	}
@@ -108,7 +107,7 @@ bool wacom_exit_ubl(int fd, UBL_STATUS *pUBLStatus )
 }
 
 // Check if switched to bootloader
-bool wacom_check_mode(int fd, UBL_STATUS *pUBLStatus )
+bool wacom_check_mode(int fd)
 {
 	boot_cmd command;
 	boot_rsp response;
@@ -117,7 +116,7 @@ bool wacom_check_mode(int fd, UBL_STATUS *pUBLStatus )
 	memset(&response, 0, sizeof(boot_rsp));
 
 	command.header.cmd = UBL_COM_CHECKMODE;
-	if ( wacom_send_cmd(fd, &command, &response, pUBLStatus ) == false ){
+	if ( wacom_send_cmd(fd, &command, &response) == false ){
 		fprintf(stderr, "%s Sending command failed \n", __func__);
 		return false;
 	}
@@ -130,7 +129,7 @@ bool wacom_check_mode(int fd, UBL_STATUS *pUBLStatus )
 }
 
 // Get info about device
-bool wacom_get_data(int fd, UBL_STATUS *pUBLStatus )
+bool wacom_get_data(int fd, UBL_STATUS *pUBLStatus)
 {
 	boot_cmd command;
 	boot_rsp response;
@@ -140,7 +139,7 @@ bool wacom_get_data(int fd, UBL_STATUS *pUBLStatus )
 
 	// MPUTYPE
 	command.header.cmd = UBL_COM_GETMPUTYPE;
-	if ( wacom_send_cmd(fd, &command, &response, pUBLStatus ) == false ){
+	if ( wacom_send_cmd(fd, &command, &response) == false ){
 		fprintf(stderr, "%s reportid: %x, cmd: %x, echo: %x, resp: %x \n", __func__, 
 			response.header.reportId, response.header.cmd, response.header.echo, response.header.resp);
 		return false;
@@ -154,7 +153,7 @@ bool wacom_get_data(int fd, UBL_STATUS *pUBLStatus )
 
 	// UBL Version
 	command.header.cmd = UBL_COM_GETBLVER;
-	if ( wacom_send_cmd(fd, &command, &response, pUBLStatus ) == false ){
+	if ( wacom_send_cmd(fd, &command, &response) == false ){
 		fprintf(stderr, "%s Obtaining UBL version failed \n", __func__);
 		return false;
 	}
@@ -191,7 +190,7 @@ bool wacom_check_data( UBL_PROCESS *pUBLProcess, UBL_STATUS *pUBLStatus)
 	return true;
 }
 
-bool wacom_erase_all(int fd,  UBL_PROCESS *pUBLProcess, UBL_STATUS *pUBLStatus)
+bool wacom_erase_all(int fd,  UBL_PROCESS *pUBLProcess)
 {
 	bool bRet = false;
 	boot_cmd command;
@@ -358,7 +357,7 @@ bool wacom_write(int fd, UBL_PROCESS *pUBLProcess, UBL_STATUS *pUBLStatus )
 #ifdef WACOM_DEBUG_LV1
 	fprintf(stderr, "Erasing flash. \n");
 #endif
-	if (wacom_erase_all(fd, pUBLProcess, pUBLStatus ) == false ){
+	if (wacom_erase_all(fd, pUBLProcess) == false ){
 		fprintf(stderr, "%s failed \n", __func__);
 		return false;
 	}
@@ -439,7 +438,7 @@ bool check_hw_compatibility(int fd, char *data, UBL_STATUS *pUBLStatus,
 	for ( i = 0; i < 5/*UBL_RETRY_NUM*/; i++ ){
 		usleep(200 * MILLI);
 
-		bRet = wacom_check_mode(fd, pUBLStatus );
+		bRet = wacom_check_mode(fd);
 		if (bRet)
 			break;
 		else
@@ -466,7 +465,7 @@ bool check_hw_compatibility(int fd, char *data, UBL_STATUS *pUBLStatus,
 	printf("Correct firmware to write on\n");
  out:
 	for (i = 0; i < EXIT_RETRY; i++) {
-		if (wacom_exit_ubl(fd, pUBLStatus)) {
+		if (wacom_exit_ubl(fd)) {
 			fprintf(stderr, "exiting bootloader succeeded\n");
 			break;
 		} else {
@@ -520,7 +519,7 @@ int wacom_flash_aes(int fd, char *data, UBL_STATUS *pUBLStatus, UBL_PROCESS *pUB
 		for ( i = 0; i < 5/*UBL_RETRY_NUM*/; i++ ){
 			usleep(200 * MILLI);
 		
-			bRet = wacom_check_mode(fd, pUBLStatus );
+			bRet = wacom_check_mode(fd);
 			if (bRet)
 				break;
 			else
@@ -569,7 +568,7 @@ int wacom_flash_aes(int fd, char *data, UBL_STATUS *pUBLStatus, UBL_PROCESS *pUB
 #ifdef WACOM_DEBUG_LV1
 	fprintf(stderr, "\nClosing device... \n");
 #endif
-	bRet = wacom_exit_ubl(fd, pUBLStatus);
+	bRet = wacom_exit_ubl(fd);
 	if (!bRet) {
 		fprintf(stderr, "exiting boot mode failed\n");
 		ret = -EXIT_FAIL;
