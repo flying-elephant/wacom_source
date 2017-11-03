@@ -1,17 +1,6 @@
 #include "wacom_flash.h"
- 
-/*Use this array to compare the magic words which come with*/
-/*a firmware binary*/
-u8 hw_magicword[8] = {
-	(UBL_HWID_MAGIC_WORD1 & 0x00ff),
-	(UBL_HWID_MAGIC_WORD1 & 0xff00) >> 8,
-	(UBL_HWID_MAGIC_WORD2 & 0x00ff),
-	(UBL_HWID_MAGIC_WORD2 & 0xff00) >> 8,
-	(UBL_HWID_MAGIC_WORD3 & 0x00ff),
-	(UBL_HWID_MAGIC_WORD3 & 0xff00) >> 8,
-	(UBL_HWID_MAGIC_WORD4 & 0x00ff),
-	(UBL_HWID_MAGIC_WORD4 & 0xff00) >> 8,
-};
+#define PROGRAM_NAME "wacom_flash"
+#define VERSION_STRING "version 1.2"
 
 bool wacom_i2c_set_feature(int fd, u8 report_id, unsigned int buf_size, u8 *data, 
 			   u16 cmdreg, u16 datareg)
@@ -62,7 +51,8 @@ bool wacom_i2c_set_feature(int fd, u8 report_id, unsigned int buf_size, u8 *data
 }
 
 /*get_feature uses ioctl for using I2C restart method to communicate*/
-/*and for that i2c_msg requires "char" for buf rather than unsinged char*/
+/*and for that i2c_msg requires "char" for buf rather than unsinged char,*/
+/*so storing data should be back as "unsigned char".*/
 bool wacom_i2c_get_feature(int fd, u8 report_id, unsigned int buf_size, u8 *data, 
 		 u16 cmdreg, u16 datareg, char addr)
 
@@ -692,30 +682,31 @@ int get_hid_desc(int fd, char addr, unsigned int *pid)
 
 	*pid = hid_descriptor.wProductID;
 
-#ifdef SHOW_DESC
 	show_hid_descriptor(hid_descriptor);
-#endif
 
 	ret = 0;
  out:
 	return ret;
 }
 
-int parse_active_fw_version(char *data, int tech)
+unsigned int parse_active_fw_version(char *data, int tech)
 {
-	int fw_ver = 0;
+	unsigned int fw_ver = 0;
 
 	if (tech == TECH_EMR) {
-		fw_ver = (int)data[12] << 8 | data[11];
-	} else {
-		fw_ver = (int)data[12] << 8 | data[11];
+		fw_ver = (unsigned int)data[12] << 8 | data[11];
+	} else if ( data[0] == TOUCH_CMD_QUERY ) {
+		fw_ver = (unsigned int)data[12] << 8 | data[11];
 		fw_ver = fw_ver * AES_FW_BASE + data[13];
+	} else {
+		fprintf(stderr, "data 0x%02x error, cannot parse fw version \n", data[0]);
+		fw_ver = 0;
 	}
 
 	return fw_ver;
 }
 
-int wacom_gather_info(int fd, int *fw_ver, int tech)
+int wacom_gather_info(int fd, unsigned int *fw_ver, int tech)
 {
 	int ret = -1;
 	size_t report_size = ((tech == TECH_EMR) ? WACOM_QUERY_SIZE : TOUCH_QUERY_SIZE);
@@ -728,45 +719,25 @@ int wacom_gather_info(int fd, int *fw_ver, int tech)
 				     (u8 *)data, COMM_REG, DATA_REG, addr);
 	if ( bRet == false ) {
 		fprintf(stderr, "cannot get data query \n");
+		goto out;
 	}
 
 	*fw_ver = parse_active_fw_version(data, tech);
-
-	/*Check if the device is in boot-mode when the version is '0'.*/
-	/*if it is, turn it back to user-mode and try to get the firmware version agian*/
-	if (*fw_ver == 0) {
-		bool mode_boot = false;
-		bool bRet = false;
-
-		switch (tech) {
-		case TECH_EMR:
-			mode_boot = (bool)!flash_query_w9013(fd);
-			break;
-
-		case TECH_AES:
-			mode_boot = wacom_check_mode(fd);
-			break;
-		}
-
-		if (mode_boot)
-			*fw_ver = 1;
-
-	}
-
 	ret = 0;
+
  out:
 	return ret;
 }
 
-int get_device(int *current_fw_ver, char *device_num, int *tech)
+int get_device(unsigned int *current_fw_ver, unsigned int *pid, char *device_num, int *tech)
 {
 	int fd = -1;
 	int ret = -1;
 	int i;
-	unsigned int pid = 0; //2017/01/17 leave pid for the time when needed
 	char addr = EMR_I2C_ADDR;
 
 	/*Wacom I2C device can be with an address either 0x09(EMR) or 0x0a(touch&AES)*/
+	*tech = TECH_UNKNOWN;
 	for (i = 0; i < 2; i++) {
 		fd = open(device_num, O_RDWR);
 		if (fd < 0) {
@@ -782,7 +753,7 @@ int get_device(int *current_fw_ver, char *device_num, int *tech)
 			goto exit;
 		}
 
-		ret = get_hid_desc(fd, addr, &pid);
+		ret = get_hid_desc(fd, addr, pid);
 		if (ret == 0) {
 			*tech = (addr == EMR_I2C_ADDR) ? TECH_EMR : TECH_AES;
 			fprintf(stderr, "%s found: addr 0x%x \n", (*tech == TECH_EMR) ? "EMR" : "AES", addr);
@@ -794,14 +765,21 @@ int get_device(int *current_fw_ver, char *device_num, int *tech)
 		addr = AES_I2C_ADDR;
 	}
 
+	if (*tech != TECH_UNKNOWN) {
 	ret = wacom_gather_info(fd, current_fw_ver, *tech);
-	if (ret < 0) {
-		fprintf(stderr, "Cannot get device infomation\n");
+		if (ret == 0) {
+			ret = fd;
+			// even everything is OK, we should check if it is boot loader, then version should set to zero for process firmware update
+			if ( (*tech == TECH_EMR ) && ( *pid == EMR_UBL_PID ) ) {
+				*current_fw_ver = 0;
+			} else if ( (*tech == TECH_AES ) && ( *pid == UBL_G11T_UBL_PID ) ) {
+				*current_fw_ver = 0;
+			} 
+			goto exit;
+		}
 		close(fd);
-		goto exit;
 	}
-
-	ret = fd;
+	fprintf(stderr, "Cannot get device infomation\n");
 
  exit:
 	return ret;
@@ -813,21 +791,26 @@ int main(int argc, char *argv[])
 	unsigned long maxAddr = 0;
 	int fd = -1;
 	int ret = -1;
-	int current_fw_ver = -1;
+	unsigned long hwid = 0;
+	unsigned int pid = 0;
+	unsigned int current_fw_ver = 0;
 	int tech = TECH_EMR;
 	size_t data_size = 0;
 	char *data;
 	char device_num[64] = {0};
 	bool active_fw_check = false;
 	bool force_flash = false;
+	bool pid_check = false;
+	bool hwid_check = false;
 
 	FILE *fp;
 	UBL_STATUS *pUBLStatus = NULL;
 	UBL_PROCESS *pUBLProcess = NULL;
 
 	if (argc != 4){
-		fprintf(stderr,  "Usage: $wacom_flash [firmware filename] [type] [i2c-device path]\n");
-		fprintf(stderr,  "Ex: $wacom_flash W9013_056.hex -a i2c-1 \n");
+		fprintf(stderr,  "%s %s\n", PROGRAM_NAME, VERSION_STRING);
+		fprintf(stderr,  "Usage: $%s [firmware filename] [type] [i2c-device path]\n", PROGRAM_NAME);
+		fprintf(stderr,  "Ex: $%s W9013_056.hex -a i2c-1 \n", PROGRAM_NAME);
 		ret = -EXIT_NOFILE;
 		goto exit;
 	}
@@ -835,6 +818,12 @@ int main(int argc, char *argv[])
 	if (!strcmp(argv[2], "-a")) {
 		fprintf(stderr,  "Returning active firmware version only\n");
 		active_fw_check = true;
+	} else if (!strcmp(argv[2], "-p")) {
+		fprintf(stderr,  "Returning PID only\n");
+		pid_check = true;
+	} else if (!strcmp(argv[2], "-h")) {
+		fprintf(stderr,  "Returning HWID only\n");
+		hwid_check = true;
 	} else if (!strcmp(argv[2], FLAGS_RECOVERY_TRUE)) {
 		force_flash = true;
 	} else if (!strcmp(argv[2], FLAGS_RECOVERY_FALSE)) {
@@ -849,7 +838,7 @@ int main(int argc, char *argv[])
 
 #ifdef I2C_OPEN
 	/*Opening and setting file descriptor   */
-	fd = get_device(&current_fw_ver, device_num, &tech);
+	fd = get_device(&current_fw_ver, &pid, device_num, &tech);
 	if (fd < 0) {
 		fprintf(stderr, "cannot find Wacom i2c device\n");
 		ret = fd;
@@ -858,7 +847,21 @@ int main(int argc, char *argv[])
 
 	if (active_fw_check) {
 		ret = 0;
-		printf("%d\n", current_fw_ver);
+		printf("%u\n", current_fw_ver);
+		goto exit;
+	} else if (pid_check) {
+		ret = 0;
+		printf("%04x\n", pid); // in hex digit, for ex: 4877 means 0x4877
+		goto exit;
+	} else if (hwid_check) {
+#ifdef WACOM_DEBUG_LV1
+		fprintf(stderr,  "Check HWID start......\n");
+#endif
+		ret = wacom_get_hwid(fd, pid, &hwid);
+#ifdef WACOM_DEBUG_LV1
+		fprintf(stderr,  "Check HWID end......\n");
+#endif
+		printf("%04x_%04x\n", (unsigned int)((hwid&0xFFFF0000)>>16), (unsigned int)(hwid&0x0000FFFF));
 		goto exit;
 	} 
 
@@ -880,11 +883,8 @@ int main(int argc, char *argv[])
 
 		memset(pUBLStatus, 0, sizeof(UBL_STATUS) );
 		memset(pUBLProcess, 0, sizeof(UBL_PROCESS) );
-		pUBLProcess->start_adrs = 0;//UBL_G11T_BASE_FLASH_ADDRESS;
+		pUBLProcess->start_adrs = 0;
 		pUBLProcess->process = 0;	
-		pUBLProcess->size = (UBL_MAX_ROM_SIZE + 1);	
-		pUBLProcess->erase_all = false;	
-		pUBLProcess->force_flash = false;	
 	}
 
 	data = (char *)malloc(sizeof(char) * data_size);
@@ -901,7 +901,7 @@ int main(int argc, char *argv[])
 	}
 
 	ret = read_hex(fp, data, data_size, &maxAddr, pUBLProcess, pUBLStatus, tech);
-	if (ret == HEX_READ_ERR || ret == HEX_OLD_FIRMWARE) {
+	if (ret == HEX_READ_ERR) {
 		fprintf(stderr, "reading the hex file failed\n");
 		fclose(fp);
 		goto err;
