@@ -853,14 +853,17 @@ int main(int argc, char *argv[])
 		ret = 0;
 		printf("%04x\n", pid); // in hex digit, for ex: 4877 means 0x4877
 		goto exit;
-	} else if (hwid_check) {
-#ifdef WACOM_DEBUG_LV1
-		fprintf(stderr,  "Check HWID start......\n");
-#endif
-		ret = wacom_get_hwid(fd, pid, &hwid);
-#ifdef WACOM_DEBUG_LV1
-		fprintf(stderr,  "Check HWID end......\n");
-#endif
+	} else if (hwid_check) { // Feb/13/2018, Martin. This should only works for AES
+		if (tech == TECH_AES) {
+	#ifdef WACOM_DEBUG_LV1
+			fprintf(stderr,  "Check HWID start......\n");
+	#endif
+			ret = wacom_get_hwid(fd, pid, &hwid);
+	#ifdef WACOM_DEBUG_LV1
+			fprintf(stderr,  "Check HWID end......\n");
+	#endif
+		}
+		// EMR not support HWID now, just leave it 0 
 		printf("%04x_%04x\n", (unsigned int)((hwid&0xFFFF0000)>>16), (unsigned int)(hwid&0x0000FFFF));
 		goto exit;
 	} 
