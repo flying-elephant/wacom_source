@@ -364,7 +364,6 @@ bool wacom_write(int fd, UBL_PROCESS *pUBLProcess, UBL_STATUS *pUBLStatus )
 //! G11T programming thread
 int wacom_flash_aes(int fd, char *data, UBL_STATUS *pUBLStatus, UBL_PROCESS *pUBLProcess)
 {
-
 	int i;
 	int ret = -1;
 	bool bRet = false;
@@ -424,7 +423,8 @@ int wacom_flash_aes(int fd, char *data, UBL_STATUS *pUBLStatus, UBL_PROCESS *pUB
 	if (!bRet) {
 		fprintf(stderr, "UBL_G11T_Write returned false \n");
 		ret = -EXIT_FAIL;
-		goto err;
+		/*If writing is failed(including erase), do not call ExitG11TUBL*/
+		goto out_write_err;
 	}
 #endif
 	
@@ -439,8 +439,7 @@ int wacom_flash_aes(int fd, char *data, UBL_STATUS *pUBLStatus, UBL_PROCESS *pUB
 		fprintf(stderr, "exiting boot mode failed\n");
 		ret = -EXIT_FAIL;
 	}
-
-	/*If writing is failed(including erase), do not call ExitG11TUBL*/
+out_write_err:
 	return ret;
 }
 
