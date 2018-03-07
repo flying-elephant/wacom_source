@@ -282,6 +282,9 @@ u32 g_ErrorCode;
 #define UBL_G11T_MODE_UBL		0x06
 #define DEVICETYPE_UBL		        0x02
 
+#define MAINTAIN_REPORT_ID	0x09
+#define MAINTAIN_REPORT_SIZE	64
+//
 #define DEVICETYPE_REPORT_ID	        0x02
 #define UBL_CMD_REPORT_ID	        7
 #define UBL_RSP_REPORT_ID	        8
