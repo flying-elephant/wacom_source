@@ -1,12 +1,17 @@
 #include "wacom_flash.h"
 #define PROGRAM_NAME "wacom_flash"
-#define VERSION_STRING "version 1.2.5"
+#define VERSION_STRING "version 1.2.6"
 
 // Release Note
-// v1.2.5	2018/Mar/07		AES-Improve performance of read hardware id functions
-//                          (1) Reduce the sleep time of enter_ubl() and exit_ubl() from 500 ms to 300 ms
+// v1.2.6	2018/Mar/12		(1) Add support report check in wacom_hwid_from_firmware()
+//                          (2) If enter_ubl fail in wacom_get_hwid(), don't call exit_ubl(), just out the function
+//                          (3) If already in boot loader mode before program start, it is possible cause by
+//                               last firmware write was failed, don't call exit_ubl()
+//
+// v1.2.5	2018/Mar/07		(1) Reduce the sleep time of enter_ubl() and exit_ubl() from 500 ms to 300 ms
 //                          (2) If enter_ubl fail, change to just out the write function, not need to call exit_ubl()
 //                          (3) Try read the hardware id from normal first, if fail, try the ubl method
+//
 // v1.2.4	2018/Feb/26		Fix bug, we shouldn't call exit_ubl() when wacom_write() failed
 // v1.2.3	2018/Feb/14		Fix bug, we shouldn't call wacom_read_hwid() when product is EMR, it's AES only function
 

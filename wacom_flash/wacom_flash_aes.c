@@ -80,7 +80,7 @@ bool wacom_enter_ubl(int fd)
 		fprintf(stderr, "%s set feature failed\n", __func__);
 		return false;
 	}
-	usleep(300 * MILLI);	// Mar/07/2018, v1.2.6, Martin, Try reduce sleep time to minimum needed 300 ms
+	usleep(300 * MILLI);	// Mar/07/2018, v1.2.5, Martin, Try reduce sleep time to minimum needed 300 ms
 
 	return true;
 }
@@ -99,7 +99,7 @@ bool wacom_exit_ubl(int fd)
 		fprintf(stderr, "%s exiting user boot loader failed \n", __func__);
 		return false;
 	}
-	usleep(300 * MILLI);	// Mar/07/2018, v1.2.6, Martin, Try reduce sleep time to minimum needed 300 ms
+	usleep(300 * MILLI);	// Mar/07/2018, v1.2.5, Martin, Try reduce sleep time to minimum needed 300 ms
 
 	return true;
 }
@@ -126,6 +126,7 @@ bool wacom_check_mode(int fd)
 	return true;
 }
 
+#ifdef GETDATA
 // Get info about device
 bool wacom_get_data(int fd, UBL_STATUS *pUBLStatus)
 {
@@ -142,7 +143,6 @@ bool wacom_get_data(int fd, UBL_STATUS *pUBLStatus)
 			response.header.reportId, response.header.cmd, response.header.echo, response.header.resp);
 		return false;
 	}
-
 	pUBLStatus->mputype = response.header.resp;
 
 #ifdef WACOM_DEBUG_LV1
@@ -155,7 +155,6 @@ bool wacom_get_data(int fd, UBL_STATUS *pUBLStatus)
 		fprintf(stderr, "%s Obtaining UBL version failed \n", __func__);
 		return false;
 	}
-
 	pUBLStatus->ubl_ver = response.header.resp;
 	pUBLStatus->protect = 0;
 
@@ -165,6 +164,7 @@ bool wacom_get_data(int fd, UBL_STATUS *pUBLStatus)
 
 	return true;
 }
+#endif
 
 bool wacom_check_data( UBL_PROCESS *pUBLProcess, UBL_STATUS *pUBLStatus)
 {
@@ -362,7 +362,7 @@ bool wacom_write(int fd, UBL_PROCESS *pUBLProcess, UBL_STATUS *pUBLStatus )
 //! G11T programming thread
 int wacom_flash_aes(int fd, char *data, UBL_STATUS *pUBLStatus, UBL_PROCESS *pUBLProcess)
 {
-	int i;
+	int i = 0;
 	int ret = -1;
 	bool bRet = false;
 
@@ -370,47 +370,42 @@ int wacom_flash_aes(int fd, char *data, UBL_STATUS *pUBLStatus, UBL_PROCESS *pUB
 		pUBLProcess->data[i] = data[i];
 	}
 
-	i = 0;
 	if(pUBLStatus->pid != UBL_G11T_UBL_PID) {
 		if (wacom_enter_ubl(fd) == false ){
-			fprintf(stderr, "entering user boot loader error. \n");
+			fprintf(stderr, "entering boot loader error. \n");
 			// 2018/Mar/07, v1.2.5, Martin, If enter boot loader fail, just exit
 			goto out_write_err;
 		}
 
 		/*Check if the device successfully entered in UBL mode*/
-		for ( i = 0; i < 5/*UBL_RETRY_NUM*/; i++ ){
-			usleep(200 * MILLI);
-		
+		for ( i = 0; i < UBL_RETRY_NUM; i++ ){
 			bRet = wacom_check_mode(fd);
-			if (bRet)
+			if (bRet) {
+				pUBLStatus->ret = UBL_OK;	// Reset return status
 				break;
-			else
-				goto err;
-			
-			pUBLStatus->ret = UBL_OK; /*Resetting the return status*/
+			}
 			usleep(200 * MILLI);
 		}
-	}
-
-	if ( i == UBL_RETRY_NUM ){
-		pUBLStatus->ret = UBL_ERROR;
-		fprintf(stderr, "entering user boot loader error(2). \n");
-		goto err;
+		if ( i == UBL_RETRY_NUM ){
+			pUBLStatus->ret = UBL_ERROR;
+			fprintf(stderr, "entering boot loader error(2). \n");
+			// 2018/Mar/12, v1.2.6, Martin, If enter boot loader fail, just exit
+			goto out_write_err;
+		}
 	}
 
 #ifdef GETDATA
-	//Obtaining the device's basic data; repeat the cout if failed
+	// Obtaining the device's basic data; repeat the cout if failed
 	for ( i = 0; i < UBL_RETRY_NUM; i++ ){
 		bRet = wacom_get_data(fd, pUBLStatus );
-		if (bRet == false) {
-			fprintf(stderr, "Cannot correctly obtain data 1\n");
+		if (bRet) {
+			pUBLStatus->ret = UBL_OK;	// Reset return status
 			break;
 		}
-		pUBLStatus->ret = UBL_OK;			//Resetting the returned status
 		usleep(10 * MILLI);
 	}
-	if ( i == (UBL_RETRY_NUM + 1)){
+	if ( i == UBL_RETRY_NUM ){
+		pUBLStatus->ret = UBL_ERROR;
 		fprintf(stderr, "Cannot correctly obtain data 2\n");
 		goto err;
 	}
@@ -426,8 +421,7 @@ int wacom_flash_aes(int fd, char *data, UBL_STATUS *pUBLStatus, UBL_PROCESS *pUB
 		goto out_write_err;
 	}
 #endif
-	
-	ret = 0;
+	ret = UBL_OK;
 
  err:
 #ifdef WACOM_DEBUG_LV1
@@ -442,7 +436,7 @@ out_write_err:
 	return ret;
 }
 
-bool wacom_is_hwid_ok(u8 *hwid_buffer, unsigned long *hwid)
+bool wacom_hwid_ok(u8 *hwid_buffer, unsigned long *hwid)
 {
 	unsigned long the_hw_id = 0;
 	
@@ -468,10 +462,6 @@ bool wacom_hwid_from_firmware(int fd, unsigned long *hwid)
 	u8 data[MAINTAIN_REPORT_SIZE];
 	u8 hwid_buffer[MAINTAIN_REPORT_SIZE];
 
-#ifdef WACOM_DEBUG_LV1
-	fprintf(stderr, "-----wacom_hwid_from_firmware\n");
-#endif
-	
 	// Clear data and result
 	memset(data, 0, MAINTAIN_REPORT_SIZE);
 	memset(hwid_buffer, 0, MAINTAIN_REPORT_SIZE);
@@ -493,7 +483,11 @@ bool wacom_hwid_from_firmware(int fd, unsigned long *hwid)
 		fprintf(stderr, "%s get feature failed\n", __func__);
 		return false;
 	}
-	return wacom_is_hwid_ok(&(hwid_buffer[4]), hwid);
+	if (0xFF==hwid_buffer[1]) {
+		fprintf(stderr, "%s Firmware not support this Report\n", __func__);
+		return false;
+	}
+	return wacom_hwid_ok(&(hwid_buffer[4]), hwid);
 }
 
 #define OUT_INFO(...)	printf(__VA_ARGS__)
@@ -527,6 +521,10 @@ bool wacom_read_hwid(int fd, unsigned long *hwid)
 		command.verify_flash.size8 = UBL_G11T_CMD_DATA_SIZE / 8;
 		bRet = wacom_i2c_set_feature(fd, UBL_CMD_REPORT_ID, UBL_CMD_SIZE_G11T, command.data,
 				COMM_REG, DATA_REG);
+		if (!bRet) {
+			fprintf(stderr, "read_HWID Set Feature error\n");
+			return false;
+		}
 
 		usleep(5 * MILLI);
 		response.verify_flash.reportId = UBL_RSP_REPORT_ID;
@@ -534,7 +532,7 @@ bool wacom_read_hwid(int fd, unsigned long *hwid)
 						 COMM_REG, DATA_REG, AES_I2C_ADDR);
 		//fprintf(stderr, "GET block:%02d ---bRet = %d\n", i, bRet);
 		if (!bRet) {
-			fprintf(stderr, "read_HWID Set Feature error\n");
+			fprintf(stderr, "read_HWID Get Feature error\n");
 			return false;
 		}
 		// new bootloader will response the correct address and the size8 is 0x10, 
@@ -554,7 +552,7 @@ bool wacom_read_hwid(int fd, unsigned long *hwid)
 	fprintf(stderr, "-----Read Block End\n");
 #endif
 	// If hwid not OK, return false
-	if( !wacom_is_hwid_ok(hwid_buffer, hwid) )
+	if( !wacom_hwid_ok(hwid_buffer, hwid) )
 		return false;
 
 	// Dump block data
@@ -620,34 +618,34 @@ bool wacom_read_hwid(int fd, unsigned long *hwid)
 
 int wacom_get_hwid(int fd, unsigned int pid, unsigned long *hwid)
 {
-	int i_retry, ret = -1;
+	int i_retry = 0, ret = -1;
 	bool bRet = false;
 
-	i_retry = 0;
 	if(pid != UBL_G11T_UBL_PID) {
-		// Mar/07/2018, v1.2.6, Martin, Try read from normal firmware first
+		// Mar/07/2018, v1.2.5, Martin, Try read from normal firmware first
 		if( wacom_hwid_from_firmware(fd, hwid) )
 			return UBL_OK;
 
 		if (wacom_enter_ubl(fd) == false ){
-			fprintf(stderr, "Entering user boot loader error. \n");
-			goto err;
+			fprintf(stderr, "%s Entering boot loader error. \n", __func__);
+			// 2018/Mar/12, v1.2.6, Martin, If enter boot loader fail, just exit
+			goto out_get_hwid;
 		}
 
 		//Check if the device successfully entered in UBL mode
 		for ( i_retry = 0; i_retry<UBL_RETRY_NUM; i_retry++ ){
 			bRet = wacom_check_mode(fd);
 			if (bRet) {
-				ret = UBL_OK; //Resetting the return status
+				ret = UBL_OK; // Reset return status
 				break;
 			}
 			usleep(200 * MILLI);
 		}
-	}
-	if ( i_retry == UBL_RETRY_NUM ){
-		ret = UBL_ERROR;
-		fprintf(stderr, "Entering user boot loader error(2). \n");
-		goto err;
+		if ( i_retry == UBL_RETRY_NUM ){
+			ret = UBL_ERROR;
+			fprintf(stderr, "%s Entering boot loader error(2). \n", __func__);
+			goto out_get_hwid;
+		}
 	}
 
 	ret = UBL_OK;
@@ -658,15 +656,20 @@ int wacom_get_hwid(int fd, unsigned int pid, unsigned long *hwid)
 		ret = UBL_ERROR;
 	}
 
-err:
 #ifdef WACOM_DEBUG_LV1
 	fprintf(stderr, "\nClosing device... \n");
 #endif
-	bRet = wacom_exit_ubl(fd);
-	if (!bRet) {
-		fprintf(stderr, "Exit boot mode failed\n");
-		ret = -EXIT_FAIL;
+	// 2018/Mar/12, v1.2.6, Martin, Must check if chip already in boot loader mode before program start
+	// It is possible caused by last firmware write was failed
+	// We should not call exit_ubl() in this condition, otherwise, firmware will crashed
+	// We can know this by check if it is boot loader PID
+	if ( pid != UBL_G11T_UBL_PID ) { // Not in boot loader when program start
+		bRet = wacom_exit_ubl(fd);
+		if (!bRet) {
+			fprintf(stderr, "Exit boot mode failed\n");
+			ret = -EXIT_FAIL;
+		}
 	}
-
+out_get_hwid:
 	return ret;
 }
