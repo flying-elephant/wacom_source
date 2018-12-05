@@ -498,4 +498,5 @@ bool wacom_i2c_get_feature(int fd, u8 report_id, unsigned int buf_size, u8 *data
 int read_hex(FILE *fp, char *flash_data, size_t data_size, unsigned long *max_address,
 	     UBL_PROCESS *pUBLProcess, UBL_STATUS *pUBLStatus, int tech);
 int wacom_flash_aes(int fd, char *data, UBL_STATUS *pUBLStatus, UBL_PROCESS *pUBL_PROCESS);
+int wacom_get_hwid(int fd, unsigned int pid, unsigned long *hwid);
 #endif

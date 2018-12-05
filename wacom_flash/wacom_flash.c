@@ -1,8 +1,12 @@
 #include "wacom_flash.h"
 #define PROGRAM_NAME "wacom_flash"
-#define VERSION_STRING "version 1.2.6"
+#define VERSION_STRING "version 1.2.7"
 
 // Release Note
+// v1.2.7	2018/Dec/05		(1) Confirmed the response[RTRN_RSP] of these three command 
+//								BOOT_ERASE_DATAMEM, BOOT_ERASE_FLASH, BOOT_WRITE_FLASH
+//                              only 0xff or 0x00, so remove useless check statement
+//
 // v1.2.6	2018/Mar/12		(1) Add support report check in wacom_hwid_from_firmware()
 //                          (2) If enter_ubl fail in wacom_get_hwid(), don't call exit_ubl(), just out the function
 //                          (3) If already in boot loader mode before program start, it is possible cause by
@@ -166,8 +170,8 @@ int flash_query_w9013(int fd)
 	u8 response[RSP_SIZE];
 	int ECH, len = 0;	
 
-	command[len++] = BOOT_CMD_REPORT_ID;	                /* Report:ReportID */
-	command[len++] = BOOT_QUERY;				/* Report:Boot Query command */
+	command[len++] = BOOT_CMD_REPORT_ID;	/* Report:ReportID */
+	command[len++] = BOOT_QUERY;			/* Report:Boot Query command */
 	command[len++] = ECH = 7;				/* Report:echo */
 
 	bRet = wacom_i2c_set_feature(fd, REPORT_ID_1, len, command, COMM_REG, DATA_REG);
@@ -204,8 +208,8 @@ bool flash_blver_w9013(int fd, int *blver)
 	int ECH, len = 0;	
 
 	command[len++] = BOOT_CMD_REPORT_ID;	/* Report:ReportID */
-	command[len++] = BOOT_BLVER;					/* Report:Boot Version command */
-	command[len++] = ECH = 7;							/* Report:echo */
+	command[len++] = BOOT_BLVER;			/* Report:Boot Version command */
+	command[len++] = ECH = 7;				/* Report:echo */
 
 	bRet = wacom_i2c_set_feature(fd, REPORT_ID_1, len, command, COMM_REG, DATA_REG);
 	if (!bRet) {
@@ -237,9 +241,9 @@ bool flash_mputype_w9013(int fd, int* pMpuType)
 	u8 response[RSP_SIZE];
 	int ECH, len = 0;		
 
-	command[len++] = BOOT_CMD_REPORT_ID;	                        /* Report:ReportID */
-	command[len++] = BOOT_MPU;					/* Report:Boot Query command */
-	command[len++] = ECH = 7;					/* Report:echo */
+	command[len++] = BOOT_CMD_REPORT_ID;	/* Report:ReportID */
+	command[len++] = BOOT_MPU;				/* Report:Boot Query command */
+	command[len++] = ECH = 7;				/* Report:echo */
 
 	bRet = wacom_i2c_set_feature(fd, REPORT_ID_1, len, command, COMM_REG, DATA_REG);
 	if (!bRet) {
@@ -293,10 +297,10 @@ bool erase_datamem(int fd)
 	int ECH, j;
 	int len = 0;
 
-	command[len++] = BOOT_CMD_REPORT_ID;                 	/* Report:ReportID */
-	command[len++] = BOOT_ERASE_DATAMEM;			        /* Report:erase datamem command */
-	command[len++] = ECH = BOOT_ERASE_DATAMEM;					/* Report:echo */
-	command[len++] = DATAMEM_SECTOR0;				/* Report:erased block No. */
+	command[len++] = BOOT_CMD_REPORT_ID;        /* Report:ReportID */
+	command[len++] = BOOT_ERASE_DATAMEM;		/* Report:erase datamem command */
+	command[len++] = ECH = BOOT_ERASE_DATAMEM;	/* Report:echo */
+	command[len++] = DATAMEM_SECTOR0;			/* Report:erased block No. */
 
 	/*Preliminarily store the data that cannnot appear here, but in wacom_set_feature()*/	
 	sum = 0;
@@ -305,7 +309,7 @@ bool erase_datamem(int fd)
 	for (j = 0; j < 4; j++)
 		sum += command[j];
 
-	cmd_chksum = ~sum + 1;					/* Report:check sum */
+	cmd_chksum = ~sum + 1;						/* Report:check sum */
 	command[len++] = cmd_chksum;
 
 	bRet = wacom_i2c_set_feature(fd, REPORT_ID_1, len, command, COMM_REG, DATA_REG);
@@ -323,9 +327,9 @@ bool erase_datamem(int fd)
 			fprintf(stderr, "%s failed to get feature \n", __func__);
 			return bRet;
 		}
-		if ((response[RTRN_CMD] != 0x0e || response[RTRN_ECH] != ECH) || (response[RTRN_RSP] != 0xff && response[RTRN_RSP] != 0x00))
+		if ((response[RTRN_CMD] != 0x0e || response[RTRN_ECH] != ECH) )
 			return false;
-
+		// Dec/05/2018, v1.2.7, Martin, Confirmed response[RTRN_RSP] only equal 0xff or 0x00
 	} while (response[RTRN_CMD] == 0x0e && response[RTRN_ECH] == ECH && response[RTRN_RSP] == 0xff);
 
 
@@ -344,10 +348,10 @@ bool erase_codemem(int fd, int *eraseBlock, int num)
 
 	for (i = 0; i < num; i++) {
 		len = 0;		
-		command[len++] = BOOT_CMD_REPORT_ID;                 	/* Report:ReportID */
-		command[len++] = BOOT_ERASE_FLASH;			        /* Report:erase command */
-		command[len++] = ECH = i;					/* Report:echo */
-		command[len++] = *eraseBlock;				/* Report:erased block No. */
+		command[len++] = BOOT_CMD_REPORT_ID;    /* Report:ReportID */
+		command[len++] = BOOT_ERASE_FLASH;		/* Report:erase command */
+		command[len++] = ECH = i;				/* Report:echo */
+		command[len++] = *eraseBlock;			/* Report:erased block No. */
 		eraseBlock++;
 		
 		/*Preliminarily store the data that cannnot appear here, but in wacom_set_feature()*/	
@@ -375,9 +379,9 @@ bool erase_codemem(int fd, int *eraseBlock, int num)
 				fprintf(stderr, "%s failed to get feature \n", __func__);
 				return bRet;
 			}			
-			if ((response[RTRN_CMD] != 0x00 || response[RTRN_ECH] != ECH) || (response[RTRN_RSP] != 0xff && response[5] != 0x00))
+			if ((response[RTRN_CMD] != 0x00 || response[RTRN_ECH] != ECH) )
 				return false;
-			
+			// Dec/05/2018, v1.2.7, Martin, Confirmed response[RTRN_RSP] only equal 0xff or 0x00
 		} while (response[RTRN_CMD] == 0x00 && response[RTRN_ECH] == ECH && response[RTRN_RSP] == 0xff);
 	}
 
@@ -415,14 +419,14 @@ bool flash_write_block_w9013(int fd, char *flash_data,
 	unsigned char sum = 0;
 	int i;
 
-	command[0] = BOOT_CMD_REPORT_ID;	                /* Report:ReportID */
-	command[1] = BOOT_WRITE_FLASH;			        /* Report:program  command */
-	command[2] = *ECH = ++(*pcommand_id);		        /* Report:echo */
+	command[0] = BOOT_CMD_REPORT_ID;	    /* Report:ReportID */
+	command[1] = BOOT_WRITE_FLASH;			/* Report:program  command */
+	command[2] = *ECH = ++(*pcommand_id);	/* Report:echo */
 	command[3] = ulAddress & 0x000000ff;
 	command[4] = (ulAddress & 0x0000ff00) >> 8;
 	command[5] = (ulAddress & 0x00ff0000) >> 16;
-	command[6] = (ulAddress & 0xff000000) >> 24;			/* Report:address(4bytes) */
-	command[7] = 8;						/* Report:size(8*8=64) */
+	command[6] = (ulAddress & 0xff000000) >> 24;	/* Report:address(4bytes) */
+	command[7] = 8;									/* Report:size(8*8=64) */
 
 	/*Preliminarily store the data that cannnot appear here, but in wacom_set_feature()*/	
 	sum = 0;
@@ -430,7 +434,7 @@ bool flash_write_block_w9013(int fd, char *flash_data,
 	sum += 0x4c;
 	for (i = 0; i < 8; i++)
 		sum += command[i];
-	command[MAX_COM_SIZE - 2] = ~sum + 1;					/* Report:command checksum */
+	command[MAX_COM_SIZE - 2] = ~sum + 1;			/* Report:command checksum */
 	
 	sum = 0;
 	for (i = 8; i < (FLASH_BLOCK_SIZE + 8); i++){
@@ -488,11 +492,11 @@ bool flash_write_w9013(int fd, char *flash_data,
 						return bRet;
 					}
 					
-					if ((response[RTRN_CMD] != 0x01 || response[RTRN_ECH] != ECH_ARRAY[j]) || (response[RTRN_RSP] != 0xff && response[RTRN_RSP] != 0x00)) {
+					if ((response[RTRN_CMD] != 0x01 || response[RTRN_ECH] != ECH_ARRAY[j]) ) {
 						fprintf(stderr, "addr: %x res:%x \n", (unsigned int)ulAddress, response[RTRN_RSP]);
 						return false;
 					}
-				
+					// Dec/05/2018, v1.2.7, Martin, Confirmed response[RTRN_RSP] only equal 0xff or 0x00		
 				} while (response[RTRN_CMD] == 0x01 && response[RTRN_ECH] == ECH_ARRAY[j] && response[RTRN_RSP] == 0xff);
 			}
 		}
@@ -509,7 +513,7 @@ int wacom_i2c_flash_w9013(int fd, char *flash_data)
 	int eraseBlock[200], eraseBlockNum;
 	int iBLVer = 0, iMpuType = 0;
 	unsigned long max_address = 0;			/* Max.address of Load data */
-	unsigned long start_address = 0x2000;	        /* Start.address of Load data */
+	unsigned long start_address = 0x2000;	/* Start.address of Load data */
 
 	/*Obtain boot loader version*/
 	if (!flash_blver_w9013(fd, &iBLVer)) {
