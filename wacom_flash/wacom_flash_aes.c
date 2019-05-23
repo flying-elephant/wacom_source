@@ -170,7 +170,7 @@ bool wacom_check_data( UBL_PROCESS *pUBLProcess, UBL_STATUS *pUBLStatus)
 {
 
 	// Checking start address
-	if ( pUBLProcess->start_adrs != UBL_G11T_BASE_FLASH_ADDRESS ){
+	if ( pUBLProcess->start_adrs != UBL_MAIN_ADDRESS ){
 		fprintf(stderr, "%s failed \n", __func__);
 		fprintf(stderr, "Data error. Start at 0x%05x.\n", (unsigned int)pUBLProcess->start_adrs );
 
@@ -178,7 +178,7 @@ bool wacom_check_data( UBL_PROCESS *pUBLProcess, UBL_STATUS *pUBLStatus)
 	}
 
 	// checking the total firmware size
-	if ( (pUBLProcess->start_adrs + pUBLProcess->size) > (UBL_G11T_MAX_FLASH_ADDRESS + 1) ){
+	if ( (pUBLProcess->start_adrs + pUBLProcess->size) > UBL_MAIN_SIZE ){
 		fprintf(stderr, "%s failed \n", __func__);
 		fprintf(stderr, "Data size error. Size is 0x%05x. \n", (unsigned int)pUBLProcess->size );
 
@@ -241,7 +241,7 @@ bool wacom_send_data(int fd, unsigned char com, unsigned char *data, unsigned lo
 	unsigned char command_id = 0;
 
 	// g_FlashBlockSize - global variable containing size of one data block in read/write report
-	for (i = 0; i < (UBL_G11T_MAX_FLASH_ADDRESS + 1) / UBL_G11T_CMD_DATA_SIZE; i++)	{
+	for (i = 0; i < UBL_MAIN_SIZE / UBL_G11T_CMD_DATA_SIZE; i++)	{
 		if ( i * UBL_G11T_CMD_DATA_SIZE >= size ){
 			break;
 		}
@@ -436,6 +436,8 @@ out_write_err:
 	return ret;
 }
 
+// ========================================================
+#ifdef HWID_SUPPORT
 bool wacom_hwid_ok(u8 *hwid_buffer, unsigned long *hwid)
 {
 	unsigned long the_hw_id = 0;
@@ -673,3 +675,5 @@ int wacom_get_hwid(int fd, unsigned int pid, unsigned long *hwid)
 out_get_hwid:
 	return ret;
 }
+#endif //HWID_SUPPORT
+// ========================================================

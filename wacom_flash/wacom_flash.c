@@ -1,8 +1,11 @@
 #include "wacom_flash.h"
 #define PROGRAM_NAME "wacom_flash"
-#define VERSION_STRING "version 1.2.7"
+#define VERSION_STRING "version 1.2.8"
 
 // Release Note
+// v1.2.8	2019/May/05		(1) Remove HWID support, but keep the code as macro define for reference
+//							(2)	Add AES G14T support
+//
 // v1.2.7	2018/Dec/05		(1) Confirmed the response[RTRN_RSP] of these three command 
 //								BOOT_ERASE_DATAMEM, BOOT_ERASE_FLASH, BOOT_WRITE_FLASH
 //                              only 0xff or 0x00, so remove useless check statement
@@ -809,7 +812,6 @@ int main(int argc, char *argv[])
 	unsigned long maxAddr = 0;
 	int fd = -1;
 	int ret = -1;
-	unsigned long hwid = 0;
 	unsigned int pid = 0;
 	unsigned int current_fw_ver = 0;
 	int tech = TECH_EMR;
@@ -819,8 +821,10 @@ int main(int argc, char *argv[])
 	bool active_fw_check = false;
 	bool force_flash = false;
 	bool pid_check = false;
+#ifdef HWID_SUPPORT
+	unsigned long hwid = 0;
 	bool hwid_check = false;
-
+#endif
 	FILE *fp;
 	UBL_STATUS *pUBLStatus = NULL;
 	UBL_PROCESS *pUBLProcess = NULL;
@@ -839,10 +843,14 @@ int main(int argc, char *argv[])
 	} else if (!strcmp(argv[2], "-p")) {
 		fprintf(stderr,  "Returning PID only\n");
 		pid_check = true;
-	} else if (!strcmp(argv[2], "-h")) {
+	}
+#ifdef HWID_SUPPORT
+    else if (!strcmp(argv[2], "-h")) {
 		fprintf(stderr,  "Returning HWID only\n");
 		hwid_check = true;
-	} else if (!strcmp(argv[2], FLAGS_RECOVERY_TRUE)) {
+	}
+#endif
+    else if (!strcmp(argv[2], FLAGS_RECOVERY_TRUE)) {
 		force_flash = true;
 	} else if (!strcmp(argv[2], FLAGS_RECOVERY_FALSE)) {
 		fprintf(stderr,  "Force flash is NOT set\n");
@@ -871,7 +879,9 @@ int main(int argc, char *argv[])
 		ret = 0;
 		printf("%04x\n", pid); // in hex digit, for ex: 4877 means 0x4877
 		goto exit;
-	} else if (hwid_check) { // Feb/13/2018, Martin. This should only works for AES
+	} 
+#ifdef HWID_SUPPORT
+    else if (hwid_check) { // Feb/13/2018, Martin. This should only works for AES
 		if (tech == TECH_AES) {
 	#ifdef WACOM_DEBUG_LV1
 			fprintf(stderr,  "Check HWID start......\n");
@@ -885,12 +895,12 @@ int main(int argc, char *argv[])
 		printf("%04x_%04x\n", (unsigned int)((hwid&0xFFFF0000)>>16), (unsigned int)(hwid&0x0000FFFF));
 		goto exit;
 	} 
-
+#endif
 #ifdef WACOM_DEBUG_LV1
 	fprintf(stderr, "%s current_fw: 0x%x \n", __func__, current_fw_ver);
 #endif
+#endif //I2C_OPEN
 
-#endif
 	if (tech == TECH_EMR) {
 		data_size = DATA_SIZE;
 	}  else {
