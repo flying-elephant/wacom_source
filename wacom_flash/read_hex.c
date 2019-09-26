@@ -21,7 +21,7 @@ void show_result(int size, int start_addr, long max_addr, char *data)
 #endif
 
 int read_hex(FILE *fp, char *flash_data, size_t data_size, unsigned long *max_address,
-	     UBL_PROCESS *pUBLProcess, UBL_STATUS *pUBLStatus, int tech)
+	     UBL_PROCESS *pUBLProcess, int tech)
 {
 	int s;
 	int fd = -1;
@@ -32,9 +32,6 @@ int read_hex(FILE *fp, char *flash_data, size_t data_size, unsigned long *max_ad
 	unsigned long file_size = 0;
 	unsigned long start_address = (unsigned long)-1;
 	struct stat stat;
-
-	if (tech == TECH_AES)
-		pUBLProcess->data_en = false;
 
 	fd = fileno(fp);
 	ret = fstat(fd, &stat);
@@ -420,7 +417,6 @@ int read_hex(FILE *fp, char *flash_data, size_t data_size, unsigned long *max_ad
 		#endif
 		show_result(pUBLProcess->size, start_address, *max_address, (char *)pUBLProcess->data);
 #endif
-		pUBLProcess->data_en = true;
 	}
 
 	return count;

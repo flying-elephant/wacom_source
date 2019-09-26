@@ -1,28 +1,41 @@
+/* Wacom I2C Firmware Flash Program*/
+/* Copyright (c) 2013-2018 Tatsunosuke Tobita, Wacom. */
+/* Copyright (c) 2017-2019 Martin Chen, Wacom. */
+//
 #include "wacom_flash.h"
 #define PROGRAM_NAME "wacom_flash"
-#define VERSION_STRING "version 1.2.8"
+#define VERSION_STRING "version 1.3.0"
 
-// Release Note
-// v1.2.8	2019/May/05		(1) Remove HWID support, but keep the code as macro define for reference
-//							(2)	Add AES G14T support
 //
-// v1.2.7	2018/Dec/05		(1) Confirmed the response[RTRN_RSP] of these three command 
-//								BOOT_ERASE_DATAMEM, BOOT_ERASE_FLASH, BOOT_WRITE_FLASH
+// Release Note of Wacom_flash
+//
+// v1.3.0   2019/Sep/26     (1) Write the first sector after other sectors wrote OK, 
+//                              Reduce possibility of broken firmware issue by interrupt write flash process
+//                          (2) Add new HWID code for HWID in boot loader area, Check valid output when return code is 0
+//                              output format vvvv_pppp, in hex, vvvv is 0x2D1F, ppp is PID
+//
+// v1.2.9   2019/Jul/30     (1) Make a special version for support AES only (This may can use for AES Android project open source)
+//
+// v1.2.8   2019/May/05     (1) Remove HWID support, but keep the code as macro define for reference
+//                          (2) Add AES G14T support
+//
+// v1.2.7   2018/Dec/05     (1) Confirmed the response[RTRN_RSP] of these three command 
+//                              BOOT_ERASE_DATAMEM, BOOT_ERASE_FLASH, BOOT_WRITE_FLASH
 //                              only 0xff or 0x00, so remove useless check statement
 //
-// v1.2.6	2018/Mar/12		(1) Add support report check in wacom_hwid_from_firmware()
+// v1.2.6   2018/Mar/12     (1) Add support report check in wacom_hwid_from_firmware()
 //                          (2) If enter_ubl fail in wacom_get_hwid(), don't call exit_ubl(), just out the function
 //                          (3) If already in boot loader mode before program start, it is possible cause by
-//                               last firmware write was failed, don't call exit_ubl()
+//                              last firmware write was failed, don't call exit_ubl()
 //
-// v1.2.5	2018/Mar/07		(1) Reduce the sleep time of enter_ubl() and exit_ubl() from 500 ms to 300 ms
+// v1.2.5   2018/Mar/07     (1) Reduce the sleep time of enter_ubl() and exit_ubl() from 500 ms to 300 ms
 //                          (2) If enter_ubl fail, change to just out the write function, not need to call exit_ubl()
 //                          (3) Try read the hardware id from normal first, if fail, try the ubl method
 //
-// v1.2.4	2018/Feb/26		Fix bug, we shouldn't call exit_ubl() when wacom_write() failed
-// v1.2.3	2018/Feb/14		Fix bug, we shouldn't call wacom_read_hwid() when product is EMR, it's AES only function
-
-
+// v1.2.4   2018/Feb/26     Fix bug, we shouldn't call exit_ubl() when wacom_write() failed
+// v1.2.3   2018/Feb/14     Fix bug, we shouldn't call wacom_read_hwid() when product is EMR, it's AES only function
+//
+//
 bool wacom_i2c_set_feature(int fd, u8 report_id, unsigned int buf_size, u8 *data, 
 			   u16 cmdreg, u16 datareg)
 {
@@ -330,7 +343,7 @@ bool erase_datamem(int fd)
 			fprintf(stderr, "%s failed to get feature \n", __func__);
 			return bRet;
 		}
-		if ((response[RTRN_CMD] != 0x0e || response[RTRN_ECH] != ECH) )
+		if ( (response[RTRN_CMD] != 0x0e || response[RTRN_ECH] != ECH) )
 			return false;
 		// Dec/05/2018, v1.2.7, Martin, Confirmed response[RTRN_RSP] only equal 0xff or 0x00
 	} while (response[RTRN_CMD] == 0x0e && response[RTRN_ECH] == ECH && response[RTRN_RSP] == 0xff);
@@ -382,7 +395,7 @@ bool erase_codemem(int fd, int *eraseBlock, int num)
 				fprintf(stderr, "%s failed to get feature \n", __func__);
 				return bRet;
 			}			
-			if ((response[RTRN_CMD] != 0x00 || response[RTRN_ECH] != ECH) )
+			if ( (response[RTRN_CMD] != 0x00 || response[RTRN_ECH] != ECH) )
 				return false;
 			// Dec/05/2018, v1.2.7, Martin, Confirmed response[RTRN_RSP] only equal 0xff or 0x00
 		} while (response[RTRN_CMD] == 0x00 && response[RTRN_ECH] == ECH && response[RTRN_RSP] == 0xff);
@@ -495,7 +508,7 @@ bool flash_write_w9013(int fd, char *flash_data,
 						return bRet;
 					}
 					
-					if ((response[RTRN_CMD] != 0x01 || response[RTRN_ECH] != ECH_ARRAY[j]) ) {
+					if ( (response[RTRN_CMD] != 0x01 || response[RTRN_ECH] != ECH_ARRAY[j]) ) {
 						fprintf(stderr, "addr: %x res:%x \n", (unsigned int)ulAddress, response[RTRN_RSP]);
 						return false;
 					}
@@ -832,7 +845,7 @@ int main(int argc, char *argv[])
 	if (argc != 4){
 		fprintf(stderr,  "%s %s\n", PROGRAM_NAME, VERSION_STRING);
 		fprintf(stderr,  "Usage: $%s [firmware filename] [type] [i2c-device path]\n", PROGRAM_NAME);
-		fprintf(stderr,  "Ex: $%s W9013_056.hex -a i2c-1 \n", PROGRAM_NAME);
+		fprintf(stderr,  "Ex: $%s W9017_492E_0012.hex -a i2c-1 \n", PROGRAM_NAME);
 		ret = -EXIT_NOFILE;
 		goto exit;
 	}
@@ -883,15 +896,9 @@ int main(int argc, char *argv[])
 #ifdef HWID_SUPPORT
     else if (hwid_check) { // Feb/13/2018, Martin. This should only works for AES
 		if (tech == TECH_AES) {
-	#ifdef WACOM_DEBUG_LV1
-			fprintf(stderr,  "Check HWID start......\n");
-	#endif
 			ret = wacom_get_hwid(fd, pid, &hwid);
-	#ifdef WACOM_DEBUG_LV1
-			fprintf(stderr,  "Check HWID end......\n");
-	#endif
 		}
-		// EMR not support HWID now, just leave it 0 
+		// EMR not support HWID now, just leave it 0, and return value is -1
 		printf("%04x_%04x\n", (unsigned int)((hwid&0xFFFF0000)>>16), (unsigned int)(hwid&0x0000FFFF));
 		goto exit;
 	} 
@@ -931,7 +938,7 @@ int main(int argc, char *argv[])
 		goto err;
 	}
 
-	ret = read_hex(fp, data, data_size, &maxAddr, pUBLProcess, pUBLStatus, tech);
+	ret = read_hex(fp, data, data_size, &maxAddr, pUBLProcess, tech);
 	if (ret == HEX_READ_ERR) {
 		fprintf(stderr, "reading the hex file failed\n");
 		fclose(fp);

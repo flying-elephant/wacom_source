@@ -1,5 +1,6 @@
 /* Wacom I2C Firmware Flash Program*/
-/* Copyright (c) 2013 Tatsunosuke Tobita, Wacom. */
+/* Copyright (c) 2013-2018 Tatsunosuke Tobita, Wacom. */
+/* Copyright (c) 2017-2019 Martin Chen, Wacom. */
 #ifndef H_WACFLASH
 #define H_WACFLASH
 
@@ -53,15 +54,11 @@
 //#define WACOM_DEBUG_LV3
 //#define AES_DEBUG
 //#define EMR_DEBUG
-#ifdef WACOM_DEBUG_LV1
-	#define SHOW_HWID_BLOCK
-	#define SHOW_HWID
-#endif
 #define FILE_READ
 #define I2C_OPEN
 #define GETDATA
 #define CONDUCT_FLASH
-//#define HWID_SUPPORT
+#define HWID_SUPPORT	// Sep/25/2019, v1.3.0, Re-open this option for implement HWID in boot loader area
 
 
 typedef __u8 u8;
@@ -254,22 +251,20 @@ u32 g_ErrorCode;
 #define UBL_G11T_CMD_DATA_SIZE	(128)       // writing in 128 byte chunks
 //
 // Base address for merged FW
-//#define UBL_G11T_BASE_FLASH_ADDRESS	0x8000
-#define UBL_G11T_MAX_FLASH_ADDRESS	0x2bfff	// G11T max=0x2bfff
-#define UBL_G14T_MAX_FLASH_ADDRESS	0x2ffff	// G14 max=0x2ffff
+//
+#define UBL_G14T_MAX_FLASH_ADDRESS	0x2ffff	// G14 max flash address
 #define UBL_MAX_FLASH_ADDRESS	UBL_G14T_MAX_FLASH_ADDRESS	// G14 max=0x2ffff, G11T max=0x2bfff
 #define UBL_MAIN_SIZE		    (UBL_MAX_FLASH_ADDRESS + 1)
 #define UBL_MAIN_ADDRESS	    0x8000
+#define UBL_FIRST_SECTOR_ADDRES	0x8800
+#define UBL_SECTOR_SIZE         2048
 //
 // ========================================================
-// For HWID, we don't use it anymore on G14T
+// Constants For HWID
 // ========================================================
 #ifdef HWID_SUPPORT
-#define UBL_HWID_BASE_ADDR		(UBL_G11T_MAX_FLASH_ADDRESS-0x7FF)   // G11T - 0x2B800
-#define UBL_HWID_END_ADDR	    (UBL_HWID_BASE_ADDR+0x280)	    // This is 640 bytes limit (must be multiple of 128)
-#define UBL_HWID_BLOCK_SIZE	    640         // (UBL_HWID_BASE_ADDR-UBL_HWID_END_ADDR)
-#define MAINTAIN_REPORT_ID	    0x09
-#define MAINTAIN_REPORT_SIZE	64
+#define UBL_BL_CHECK_ADDR       (0x11FF8)	// start address we want to check from Boot Loader
+#define BL_DATA_BYTES_CHECK		8			// how many bytes we want to check (verify), multiple of 8
 #endif //HWID_SUPPORT
 // ========================================================
 //
@@ -476,7 +471,7 @@ bool wacom_i2c_set_feature(int fd, u8 report_id, unsigned int buf_size, u8 *data
 bool wacom_i2c_get_feature(int fd, u8 report_id, unsigned int buf_size, u8 *data, 
 			   u16 cmdreg, u16 datareg, char addr);
 int read_hex(FILE *fp, char *flash_data, size_t data_size, unsigned long *max_address,
-	     UBL_PROCESS *pUBLProcess, UBL_STATUS *pUBLStatus, int tech);
+	     UBL_PROCESS *pUBLProcess, int tech);
 int wacom_flash_aes(int fd, char *data, UBL_STATUS *pUBLStatus, UBL_PROCESS *pUBL_PROCESS);
 int wacom_get_hwid(int fd, unsigned int pid, unsigned long *hwid);
 #endif
