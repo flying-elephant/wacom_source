@@ -1,5 +1,6 @@
 /* Wacom I2C Firmware Flash Program*/
-/* Copyright (c) 2013 Tatsunosuke Tobita, Wacom. */
+/* Copyright (c) 2013-2018 Tatsunosuke Tobita, Wacom. */
+/* Copyright (c) 2017-2019 Martin Chen, Wacom. */
 #ifndef H_WACFLASH
 #define H_WACFLASH
 
@@ -21,40 +22,30 @@
 /*--WACOM common-------------------------*/
 /*---------------------------------------*/
 /*---------------------------------------*/
-#define msleep(time)({usleep(time * 1000);})
+#define MILLI                   1000    //corresponding to usleep()
+#define msleep(time)            usleep(time * MILLI)
 
 #define WACOM_VENDOR1           0x56a
 #define WACOM_VENDOR2           0x2d1f
 
-#define FLAGS_RECOVERY_TRUE    "0"
-#define FLAGS_RECOVERY_FALSE   "1"
+#define FLAGS_RECOVERY_TRUE     "0"
+#define FLAGS_RECOVERY_FALSE    "1"
 
 /*HID over I2C spec*/
 #define HID_DESC_REGISTER       0x01
-#define USAGE_PAGE              0x05
-#define USAGE_PAGE_DIGITIZERS   0x0d
-#define USAGE_PAGE_DESKTOP      0x01
-#define USAGE                   0x09
-#define USAGE_PEN               0x02
-#define USAGE_MOUSE             0x02
-#define USAGE_TOUCHSCREEN       0x04
-#define USAGE_X                 0x30
-#define USAGE_TIPPRESSURE       0x30
-#define USAGE_Y                 0x31
 
 #define FW_LINK_PATH            "/lib/firmware/wacom_firmware.hex"
 #define DEVFILE_PATH            "/dev/"
 #define PARSE_SYMBOL            '_'
 
 /*Added for using this prog. in Linux user-space program*/
-#define CMD_GET_FEATURE	         2
-#define CMD_SET_FEATURE	         3
-#define RTYPE_FEATURE            0x03 /*: Report type -> feature(11b)*/
-#define GFEATURE_SIZE            6
-#define SFEATURE_SIZE            8
-#define COMM_REG                 0x04
-#define DATA_REG                 0x05
-
+#define CMD_GET_FEATURE	        2
+#define CMD_SET_FEATURE	        3
+#define RTYPE_FEATURE           0x03 /*: Report type -> feature(11b)*/
+#define GFEATURE_SIZE           6
+#define SFEATURE_SIZE           8
+#define COMM_REG                0x04
+#define DATA_REG                0x05
 #define ASCII_EOF               0x1A
 
 /*Flags for testing*/
@@ -63,17 +54,12 @@
 //#define WACOM_DEBUG_LV3
 //#define AES_DEBUG
 //#define EMR_DEBUG
-#ifdef WACOM_DEBUG_LV1
-	#define SHOW_HWID_BLOCK
-	#define SHOW_HWID
-#endif
 #define FILE_READ
 #define I2C_OPEN
 #define GETDATA
 #define CONDUCT_FLASH
+#define HWID_SUPPORT	// Sep/25/2019, v1.3.0, Re-open this option for implement HWID in boot loader area
 
-/*Added parameters*/
-#define MILLI             1000    //corresponding to usleep()
 
 typedef __u8 u8;
 typedef __u16 u16;
@@ -124,129 +110,126 @@ u32 g_ErrorCode;
 /*--WACOM EMR Technology-----------------*/
 /*---------------------------------------*/
 /*---------------------------------------*/
-#define TECH_UNKNOWN		0x00
+#define TECH_UNKNOWN		    0x00
 #define TECH_EMR                0x01
 #define EMR_I2C_ADDR            0x09
-#define MPU_W9013              0x2e
-#define EMR_HEAD_NAME           "W9013"
-#define EMR_FW_BLK              1
-#define EMR_UBL_PID			0x012B
+#define WACOM_CMD_QUERY         0x03
+#define WACOM_QUERY_SIZE        19
+#define DATA_SIZE               (65536 * 2)	// W9021 5*64K, W9013 2*64K
 
-#define MAX_POLL_DEV            20
-#define NUM_OF_RETRY            5
+#define MPU_W9013               0x2e
+#define EMR_UBL_PID			    0x012B
 
-#define DATA_SIZE               (65536 * 2)
-#define HEX_READ_ERR            -1
-#define ASCII_EOF               0x1A
-#define ACK			0
+#define CMD_SIZE                (72 + 6) //depends on W9013
+#define RSP_SIZE                6
 
-#define FLASH_BLOCK_SIZE        64
+#define FLASH_BLOCK_SIZE        64		//depends on W9013
 #define BLOCK_NUM               127
 #define W9013_START_ADDR        0x2000
 #define W9013_END_ADDR          0x1ffff
 
+
+/*----------------------------------*/
+/*----------------------------------*/
+/*----------    Report ID   --------*/
+/*----------------------------------*/
+/*----------------------------------*/
 #define REPORT_ID_1             0x07
 #define REPORT_ID_2             0x08
+#define BOOT_CMD_SIZE	        78
+#define BOOT_RSP_SIZE	        6
 #define BOOT_QUERY_SIZE         5
 
 #define FLASH_CMD_REPORT_ID     2
-#define BOOT_CMD_SIZE	        78
-#define BOOT_RSP_SIZE	         6
-#define BOOT_CMD_REPORT_ID	 7
-#define BOOT_ERASE_DATAMEM    0x0e
-#define BOOT_ERASE_FLASH	 0
-#define BOOT_WRITE_FLASH	 1
-#define BOOT_EXIT		 3
-#define BOOT_BLVER		 4
-#define BOOT_MPU		 5
-#define BOOT_QUERY		 7
+#define BOOT_CMD_REPORT_ID	    7
 
-#define QUERY_CMD             0x07
-#define BOOT_CMD              0x04
-#define MPU_CMD               0x05
-#define ERS_CMD               0x00
-#define WRITE_CMD             0x01
+#define BOOT_ERASE_DATAMEM      0x0e
+#define BOOT_ERASE_FLASH	    0
+#define BOOT_WRITE_FLASH	    1
+#define BOOT_EXIT		        3
+#define BOOT_BLVER		        4
+#define BOOT_MPU		        5
+#define BOOT_QUERY		        7
 
-#define QUERY_RSP             0x06
-#define ERS_RSP               0x00
-#define WRITE_RSP             0x00
+#define QUERY_CMD               0x07
+#define BOOT_CMD                0x04
+#define MPU_CMD                 0x05
+#define ERS_CMD                 0x00
+#define WRITE_CMD               0x01
 
-#define BUF_SIZE             1024
-#define CMD_SIZE             (72 + 6)
-#define RSP_SIZE                 6
+/*bootloader response*/
+#define QUERY_RSP               0x06
+#define ERS_RSP                 0x00
+#define WRITE_RSP               0x00
+
+//#define BUF_SIZE                1024
 
 /*Sector Nos for erasing datamem*/
-#define DATAMEM_SECTOR0          0
-#define DATAMEM_SECTOR1          1
-#define DATAMEM_SECTOR2          2
-#define DATAMEM_SECTOR3          3
-#define DATAMEM_SECTOR4          4
-#define DATAMEM_SECTOR5          5
-#define DATAMEM_SECTOR6          6
-#define DATAMEM_SECTOR7          7
+#define DATAMEM_SECTOR0         0
 
-#define RTRN_CMD                 1
-#define RTRN_ECH                 2
-#define RTRN_RSP                 3
+#define RTRN_CMD                1
+#define RTRN_ECH                2
+#define RTRN_RSP                3
 
-/*query command*/
-#define WACOM_CMD_QUERY          0x03
-#define WACOM_QUERY_SIZE         19
+#define NUM_OF_RETRY            5
 
+#define HEX_READ_ERR            -1
+#define ASCII_EOF               0x1A
+#define ACK			            0
 //
 // exit codes
 //
-#define EXIT_OK					(0)
-#define EXIT_REBOOT				(1)
-#define EXIT_FAIL				(2)
-#define EXIT_USAGE				(3)
-#define EXIT_NO_SUCH_FILE			(4)
-#define EXIT_NO_INTEL_HEX			(5)
+#define EXIT_OK					        (0)
+#define EXIT_REBOOT				        (1)
+#define EXIT_FAIL				        (2)
+#define EXIT_USAGE				        (3)
+#define EXIT_NO_SUCH_FILE			    (4)
+#define EXIT_NO_INTEL_HEX			    (5)
 #define EXIT_FAIL_OPEN_COM_PORT			(6)
 #define EXIT_FAIL_ENTER_FLASH_MODE		(7)
 #define EXIT_FAIL_FLASH_QUERY			(8)
 #define EXIT_FAIL_BAUDRATE_CHANGE		(9)
 #define EXIT_FAIL_WRITE_FIRMWARE		(10)
 #define EXIT_FAIL_EXIT_FLASH_MODE		(11)
-#define EXIT_CANCEL_UPDATE			(12)
-#define EXIT_SUCCESS_UPDATE			(13)
+#define EXIT_CANCEL_UPDATE			    (12)
+#define EXIT_SUCCESS_UPDATE			    (13)
 #define EXIT_FAIL_HID2SERIAL			(14)
 #define EXIT_FAIL_VERIFY_FIRMWARE		(15)
 #define EXIT_FAIL_MAKE_WRITING_MARK		(16)
-#define EXIT_FAIL_ERASE_WRITING_MARK            (17)
+#define EXIT_FAIL_ERASE_WRITING_MARK    (17)
 #define EXIT_FAIL_READ_WRITING_MARK		(18)
-#define EXIT_EXIST_MARKING			(19)
+#define EXIT_EXIST_MARKING			    (19)
 #define EXIT_FAIL_MISMATCHING			(20)
-#define EXIT_FAIL_ERASE				(21)
+#define EXIT_FAIL_ERASE				    (21)
 #define EXIT_FAIL_GET_BOOT_LOADER_VERSION	(22)
 #define EXIT_FAIL_GET_MPU_TYPE			(23)
 #define EXIT_MISMATCH_BOOTLOADER		(24)
 #define EXIT_MISMATCH_MPUTYPE			(25)
 #define EXIT_FAIL_ERASE_BOOT			(26)
 #define EXIT_FAIL_WRITE_BOOTLOADER		(27)
-#define EXIT_FAIL_SWAP_BOOT			(28)
+#define EXIT_FAIL_SWAP_BOOT			    (28)
 #define EXIT_FAIL_WRITE_DATA			(29)
-#define EXIT_FAIL_GET_FIRMWARE_VERSION	        (30)
+#define EXIT_FAIL_GET_FIRMWARE_VERSION	(30)
 #define EXIT_FAIL_GET_UNIT_ID			(31)
 #define EXIT_FAIL_SEND_STOP_COMMAND		(32)
-#define EXIT_FAIL_SEND_QUERY_COMMAND	        (33)
+#define EXIT_FAIL_SEND_QUERY_COMMAND	(33)
 #define EXIT_NOT_FILE_FOR_535			(34)
 #define EXIT_NOT_FILE_FOR_514			(35)
 #define EXIT_NOT_FILE_FOR_503			(36)
 #define EXIT_MISMATCH_MPU_TYPE			(37)
 #define EXIT_NOT_FILE_FOR_515			(38)
 #define EXIT_NOT_FILE_FOR_1024			(39)
-#define EXIT_FAIL_VERIFY_WRITING_MARK	        (40)
+#define EXIT_FAIL_VERIFY_WRITING_MARK	(40)
 #define EXIT_DEVICE_NOT_FOUND			(41)
-#define EXIT_FAIL_WRITING_MARK_NOT_SET	        (42)
-#define EXIT_FAIL_SET_PDCT                      (43)
-#define ERR                                     (44)
-#define ERR_WRITE                               (45)
-#define EXIT_FAIL_FWCMP                         (46)
-#define EXIT_VERSION_CHECK                      (47)
-#define EXIT_NOFILE                             (48)
-#define EXIT_NOSUCH_OPTION                      (49)
-#define EXIT_FAIL_READLINK                      (50)
+#define EXIT_FAIL_WRITING_MARK_NOT_SET	(42)
+#define EXIT_FAIL_SET_PDCT              (43)
+#define ERR                             (44)
+#define ERR_WRITE                       (45)
+#define EXIT_FAIL_FWCMP                 (46)
+#define EXIT_VERSION_CHECK              (47)
+#define EXIT_NOFILE                     (48)
+#define EXIT_NOSUCH_OPTION              (49)
+#define EXIT_FAIL_READLINK              (50)
 
 /*---------------------------------------*/
 /*---------------------------------------*/
@@ -256,59 +239,51 @@ u32 g_ErrorCode;
 /*Added for using this prog. in Linux user-space program*/
 #define TECH_AES                0x02
 #define AES_I2C_ADDR            0x0a
+#define AES_FW_BASE             0x100
+//
 #define TOUCH_CMD_QUERY         0x04
 #define TOUCH_QUERY_SIZE        16
-#define GET_AES_QUERY           0x05
-#define AES_QUERY_SIZE          9
-
-#define AES_FW_BASE             0x100
-#define AES_FW_BLK              4
-#define AES_REV_BLK             5
-
-#define UBL_MAIN_ADDRESS	        0x8000
-
-#define UBL_MAIN_SIZE		        (0x2bfff + 1)
-#define UBL_ROM_SIZE		        0x30000	
-#define UBL_CMD_SIZE_G11T	        (256 + 1)	// with report id
-#define UBL_RSP_SIZE_G11T	        (135 + 1)	// with report id
-#define UBL_G11T_CMD_DATA_SIZE	        128     // writing in 128 byte chunks
-#define UBL_HWID_BASE_ADDR		(0x2B800)
-#define UBL_HWID_END_ADDR	(0x2BA80)	// This is 640 bytes limit (must be multiple of 128)
-                                                                // (UBL_HWID_BASE_ADDR-UBL_HWID_END_ADDR)
-#define UBL_HWID_BLOCK_SIZE	640
-
-#define UBL_TIMEOUT_WRITE	        1000
-#define UBL_RETRY_NUM		        3
-#define UBL_G11T_MODE_UBL		0x06
-#define DEVICETYPE_UBL		        0x02
-
-#define MAINTAIN_REPORT_ID	0x09
-#define MAINTAIN_REPORT_SIZE	64
 //
-#define DEVICETYPE_REPORT_ID	        0x02
-#define UBL_CMD_REPORT_ID	        7
-#define UBL_RSP_REPORT_ID	        8
-
-#define UBL_RES_BUSYBIT			0x80
-#define UBL_RES_ERRORBIT		0x40
-
-
-#define UBL_WRITE			0x01	// regular writing
-#define UBL_FORCEWRITE			0x02	// force-writing by ignoring device states
-
+#define UBL_G11T_UBL_PID	    0x0094
+#define UBL_ROM_SIZE		    0x30000	
+#define UBL_CMD_SIZE_G11T	    (256 + 1)	// with report id
+#define UBL_RSP_SIZE_G11T	    (135 + 1)	// with report id
+#define UBL_G11T_CMD_DATA_SIZE	(128)       // writing in 128 byte chunks
+//
+// Base address for merged FW
+//
+#define UBL_G14T_MAX_FLASH_ADDRESS	0x2ffff	// G14 max flash address
+#define UBL_MAX_FLASH_ADDRESS	UBL_G14T_MAX_FLASH_ADDRESS	// G14 max=0x2ffff, G11T max=0x2bfff
+#define UBL_MAIN_SIZE		    (UBL_MAX_FLASH_ADDRESS + 1)
+#define UBL_MAIN_ADDRESS	    0x8000
+#define UBL_FIRST_SECTOR_ADDRES	0x8800
+#define UBL_SECTOR_SIZE         2048
+//
+// ========================================================
+// Constants For HWID
+// ========================================================
+#ifdef HWID_SUPPORT
+#define UBL_BL_CHECK_ADDR       (0x11FF8)	// start address we want to check from Boot Loader
+#define BL_DATA_BYTES_CHECK		8			// how many bytes we want to check (verify), multiple of 8
+#endif //HWID_SUPPORT
+// ========================================================
+//
+#define UBL_TIMEOUT_WRITE	    1000
+#define UBL_RETRY_NUM		    3
+#define UBL_G11T_MODE_UBL		0x06
+#define DEVICETYPE_UBL		    0x02
+//
+#define DEVICETYPE_REPORT_ID	0x02
+#define UBL_CMD_REPORT_ID	    7
+#define UBL_RSP_REPORT_ID	    8
+//
 // Returned values
-#define UBL_OK				0x00
-#define UBL_ERROR			0x01
-
-#define UBL_G11T_UBL_PID	        0x0094
-
-//! Base address for merged FW
-#define UBL_G11T_BASE_FLASH_ADDRESS	0x8000
-#define UBL_G11T_MAX_FLASH_ADDRESS	0x2bfff
+#define UBL_OK				    0x00
+#define UBL_ERROR			    0x01
 
 // bootloader commands
 #define UBL_COM_WRITE			0x01
-#define UBL_COM_VERIFY		0x02
+#define UBL_COM_VERIFY		    0x02
 #define UBL_COM_EXIT			0x03
 #define UBL_COM_GETBLVER		0x04
 #define UBL_COM_GETMPUTYPE		0x05
@@ -316,11 +291,11 @@ u32 g_ErrorCode;
 #define UBL_COM_ALLERASE		0x90
 
 // bootloader responses
-#define UBL_RES_OK			0x00
+#define UBL_RES_OK			    0x00
 #define UBL_RES_BUSY			0x80
-#define UBL_RES_MCUTYPE_ERROR	        0x0C
+#define UBL_RES_MCUTYPE_ERROR	0x0C
 #define UBL_RES_PID_ERROR		0x0D
-#define UBL_RES_VERSION_ERROR	        0x0E
+#define UBL_RES_VERSION_ERROR	0x0E
 
 
 // struct(s)
@@ -496,6 +471,7 @@ bool wacom_i2c_set_feature(int fd, u8 report_id, unsigned int buf_size, u8 *data
 bool wacom_i2c_get_feature(int fd, u8 report_id, unsigned int buf_size, u8 *data, 
 			   u16 cmdreg, u16 datareg, char addr);
 int read_hex(FILE *fp, char *flash_data, size_t data_size, unsigned long *max_address,
-	     UBL_PROCESS *pUBLProcess, UBL_STATUS *pUBLStatus, int tech);
+	     UBL_PROCESS *pUBLProcess, int tech);
 int wacom_flash_aes(int fd, char *data, UBL_STATUS *pUBLStatus, UBL_PROCESS *pUBL_PROCESS);
+int wacom_get_hwid(int fd, unsigned int pid, unsigned long *hwid);
 #endif

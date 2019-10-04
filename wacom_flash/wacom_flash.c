@@ -1,21 +1,41 @@
+/* Wacom I2C Firmware Flash Program*/
+/* Copyright (c) 2013-2018 Tatsunosuke Tobita, Wacom. */
+/* Copyright (c) 2017-2019 Martin Chen, Wacom. */
+//
 #include "wacom_flash.h"
 #define PROGRAM_NAME "wacom_flash"
-#define VERSION_STRING "version 1.2.6"
+#define VERSION_STRING "version 1.3.0"
 
-// Release Note
-// v1.2.6	2018/Mar/12		(1) Add support report check in wacom_hwid_from_firmware()
+//
+// Release Note of Wacom_flash
+//
+// v1.3.0   2019/Sep/26     (1) Write the first sector after other sectors wrote OK, 
+//                              Reduce possibility of broken firmware issue by interrupt write flash process
+//                          (2) Add new HWID code for HWID in boot loader area, Check valid output when return code is 0
+//                              output format vvvv_pppp, in hex, vvvv is 0x2D1F, ppp is PID
+//
+// v1.2.9   2019/Jul/30     (1) Make a special version for support AES only (This may can use for AES Android project open source)
+//
+// v1.2.8   2019/May/05     (1) Remove HWID support, but keep the code as macro define for reference
+//                          (2) Add AES G14T support
+//
+// v1.2.7   2018/Dec/05     (1) Confirmed the response[RTRN_RSP] of these three command 
+//                              BOOT_ERASE_DATAMEM, BOOT_ERASE_FLASH, BOOT_WRITE_FLASH
+//                              only 0xff or 0x00, so remove useless check statement
+//
+// v1.2.6   2018/Mar/12     (1) Add support report check in wacom_hwid_from_firmware()
 //                          (2) If enter_ubl fail in wacom_get_hwid(), don't call exit_ubl(), just out the function
 //                          (3) If already in boot loader mode before program start, it is possible cause by
-//                               last firmware write was failed, don't call exit_ubl()
+//                              last firmware write was failed, don't call exit_ubl()
 //
-// v1.2.5	2018/Mar/07		(1) Reduce the sleep time of enter_ubl() and exit_ubl() from 500 ms to 300 ms
+// v1.2.5   2018/Mar/07     (1) Reduce the sleep time of enter_ubl() and exit_ubl() from 500 ms to 300 ms
 //                          (2) If enter_ubl fail, change to just out the write function, not need to call exit_ubl()
 //                          (3) Try read the hardware id from normal first, if fail, try the ubl method
 //
-// v1.2.4	2018/Feb/26		Fix bug, we shouldn't call exit_ubl() when wacom_write() failed
-// v1.2.3	2018/Feb/14		Fix bug, we shouldn't call wacom_read_hwid() when product is EMR, it's AES only function
-
-
+// v1.2.4   2018/Feb/26     Fix bug, we shouldn't call exit_ubl() when wacom_write() failed
+// v1.2.3   2018/Feb/14     Fix bug, we shouldn't call wacom_read_hwid() when product is EMR, it's AES only function
+//
+//
 bool wacom_i2c_set_feature(int fd, u8 report_id, unsigned int buf_size, u8 *data, 
 			   u16 cmdreg, u16 datareg)
 {
@@ -166,8 +186,8 @@ int flash_query_w9013(int fd)
 	u8 response[RSP_SIZE];
 	int ECH, len = 0;	
 
-	command[len++] = BOOT_CMD_REPORT_ID;	                /* Report:ReportID */
-	command[len++] = BOOT_QUERY;				/* Report:Boot Query command */
+	command[len++] = BOOT_CMD_REPORT_ID;	/* Report:ReportID */
+	command[len++] = BOOT_QUERY;			/* Report:Boot Query command */
 	command[len++] = ECH = 7;				/* Report:echo */
 
 	bRet = wacom_i2c_set_feature(fd, REPORT_ID_1, len, command, COMM_REG, DATA_REG);
@@ -204,8 +224,8 @@ bool flash_blver_w9013(int fd, int *blver)
 	int ECH, len = 0;	
 
 	command[len++] = BOOT_CMD_REPORT_ID;	/* Report:ReportID */
-	command[len++] = BOOT_BLVER;					/* Report:Boot Version command */
-	command[len++] = ECH = 7;							/* Report:echo */
+	command[len++] = BOOT_BLVER;			/* Report:Boot Version command */
+	command[len++] = ECH = 7;				/* Report:echo */
 
 	bRet = wacom_i2c_set_feature(fd, REPORT_ID_1, len, command, COMM_REG, DATA_REG);
 	if (!bRet) {
@@ -237,9 +257,9 @@ bool flash_mputype_w9013(int fd, int* pMpuType)
 	u8 response[RSP_SIZE];
 	int ECH, len = 0;		
 
-	command[len++] = BOOT_CMD_REPORT_ID;	                        /* Report:ReportID */
-	command[len++] = BOOT_MPU;					/* Report:Boot Query command */
-	command[len++] = ECH = 7;					/* Report:echo */
+	command[len++] = BOOT_CMD_REPORT_ID;	/* Report:ReportID */
+	command[len++] = BOOT_MPU;				/* Report:Boot Query command */
+	command[len++] = ECH = 7;				/* Report:echo */
 
 	bRet = wacom_i2c_set_feature(fd, REPORT_ID_1, len, command, COMM_REG, DATA_REG);
 	if (!bRet) {
@@ -293,10 +313,10 @@ bool erase_datamem(int fd)
 	int ECH, j;
 	int len = 0;
 
-	command[len++] = BOOT_CMD_REPORT_ID;                 	/* Report:ReportID */
-	command[len++] = BOOT_ERASE_DATAMEM;			        /* Report:erase datamem command */
-	command[len++] = ECH = BOOT_ERASE_DATAMEM;					/* Report:echo */
-	command[len++] = DATAMEM_SECTOR0;				/* Report:erased block No. */
+	command[len++] = BOOT_CMD_REPORT_ID;        /* Report:ReportID */
+	command[len++] = BOOT_ERASE_DATAMEM;		/* Report:erase datamem command */
+	command[len++] = ECH = BOOT_ERASE_DATAMEM;	/* Report:echo */
+	command[len++] = DATAMEM_SECTOR0;			/* Report:erased block No. */
 
 	/*Preliminarily store the data that cannnot appear here, but in wacom_set_feature()*/	
 	sum = 0;
@@ -305,7 +325,7 @@ bool erase_datamem(int fd)
 	for (j = 0; j < 4; j++)
 		sum += command[j];
 
-	cmd_chksum = ~sum + 1;					/* Report:check sum */
+	cmd_chksum = ~sum + 1;						/* Report:check sum */
 	command[len++] = cmd_chksum;
 
 	bRet = wacom_i2c_set_feature(fd, REPORT_ID_1, len, command, COMM_REG, DATA_REG);
@@ -323,9 +343,9 @@ bool erase_datamem(int fd)
 			fprintf(stderr, "%s failed to get feature \n", __func__);
 			return bRet;
 		}
-		if ((response[RTRN_CMD] != 0x0e || response[RTRN_ECH] != ECH) || (response[RTRN_RSP] != 0xff && response[RTRN_RSP] != 0x00))
+		if ( (response[RTRN_CMD] != 0x0e || response[RTRN_ECH] != ECH) )
 			return false;
-
+		// Dec/05/2018, v1.2.7, Martin, Confirmed response[RTRN_RSP] only equal 0xff or 0x00
 	} while (response[RTRN_CMD] == 0x0e && response[RTRN_ECH] == ECH && response[RTRN_RSP] == 0xff);
 
 
@@ -344,10 +364,10 @@ bool erase_codemem(int fd, int *eraseBlock, int num)
 
 	for (i = 0; i < num; i++) {
 		len = 0;		
-		command[len++] = BOOT_CMD_REPORT_ID;                 	/* Report:ReportID */
-		command[len++] = BOOT_ERASE_FLASH;			        /* Report:erase command */
-		command[len++] = ECH = i;					/* Report:echo */
-		command[len++] = *eraseBlock;				/* Report:erased block No. */
+		command[len++] = BOOT_CMD_REPORT_ID;    /* Report:ReportID */
+		command[len++] = BOOT_ERASE_FLASH;		/* Report:erase command */
+		command[len++] = ECH = i;				/* Report:echo */
+		command[len++] = *eraseBlock;			/* Report:erased block No. */
 		eraseBlock++;
 		
 		/*Preliminarily store the data that cannnot appear here, but in wacom_set_feature()*/	
@@ -375,9 +395,9 @@ bool erase_codemem(int fd, int *eraseBlock, int num)
 				fprintf(stderr, "%s failed to get feature \n", __func__);
 				return bRet;
 			}			
-			if ((response[RTRN_CMD] != 0x00 || response[RTRN_ECH] != ECH) || (response[RTRN_RSP] != 0xff && response[5] != 0x00))
+			if ( (response[RTRN_CMD] != 0x00 || response[RTRN_ECH] != ECH) )
 				return false;
-			
+			// Dec/05/2018, v1.2.7, Martin, Confirmed response[RTRN_RSP] only equal 0xff or 0x00
 		} while (response[RTRN_CMD] == 0x00 && response[RTRN_ECH] == ECH && response[RTRN_RSP] == 0xff);
 	}
 
@@ -415,14 +435,14 @@ bool flash_write_block_w9013(int fd, char *flash_data,
 	unsigned char sum = 0;
 	int i;
 
-	command[0] = BOOT_CMD_REPORT_ID;	                /* Report:ReportID */
-	command[1] = BOOT_WRITE_FLASH;			        /* Report:program  command */
-	command[2] = *ECH = ++(*pcommand_id);		        /* Report:echo */
+	command[0] = BOOT_CMD_REPORT_ID;	    /* Report:ReportID */
+	command[1] = BOOT_WRITE_FLASH;			/* Report:program  command */
+	command[2] = *ECH = ++(*pcommand_id);	/* Report:echo */
 	command[3] = ulAddress & 0x000000ff;
 	command[4] = (ulAddress & 0x0000ff00) >> 8;
 	command[5] = (ulAddress & 0x00ff0000) >> 16;
-	command[6] = (ulAddress & 0xff000000) >> 24;			/* Report:address(4bytes) */
-	command[7] = 8;						/* Report:size(8*8=64) */
+	command[6] = (ulAddress & 0xff000000) >> 24;	/* Report:address(4bytes) */
+	command[7] = 8;									/* Report:size(8*8=64) */
 
 	/*Preliminarily store the data that cannnot appear here, but in wacom_set_feature()*/	
 	sum = 0;
@@ -430,7 +450,7 @@ bool flash_write_block_w9013(int fd, char *flash_data,
 	sum += 0x4c;
 	for (i = 0; i < 8; i++)
 		sum += command[i];
-	command[MAX_COM_SIZE - 2] = ~sum + 1;					/* Report:command checksum */
+	command[MAX_COM_SIZE - 2] = ~sum + 1;			/* Report:command checksum */
 	
 	sum = 0;
 	for (i = 8; i < (FLASH_BLOCK_SIZE + 8); i++){
@@ -488,11 +508,11 @@ bool flash_write_w9013(int fd, char *flash_data,
 						return bRet;
 					}
 					
-					if ((response[RTRN_CMD] != 0x01 || response[RTRN_ECH] != ECH_ARRAY[j]) || (response[RTRN_RSP] != 0xff && response[RTRN_RSP] != 0x00)) {
+					if ( (response[RTRN_CMD] != 0x01 || response[RTRN_ECH] != ECH_ARRAY[j]) ) {
 						fprintf(stderr, "addr: %x res:%x \n", (unsigned int)ulAddress, response[RTRN_RSP]);
 						return false;
 					}
-				
+					// Dec/05/2018, v1.2.7, Martin, Confirmed response[RTRN_RSP] only equal 0xff or 0x00		
 				} while (response[RTRN_CMD] == 0x01 && response[RTRN_ECH] == ECH_ARRAY[j] && response[RTRN_RSP] == 0xff);
 			}
 		}
@@ -509,7 +529,7 @@ int wacom_i2c_flash_w9013(int fd, char *flash_data)
 	int eraseBlock[200], eraseBlockNum;
 	int iBLVer = 0, iMpuType = 0;
 	unsigned long max_address = 0;			/* Max.address of Load data */
-	unsigned long start_address = 0x2000;	        /* Start.address of Load data */
+	unsigned long start_address = 0x2000;	/* Start.address of Load data */
 
 	/*Obtain boot loader version*/
 	if (!flash_blver_w9013(fd, &iBLVer)) {
@@ -805,7 +825,6 @@ int main(int argc, char *argv[])
 	unsigned long maxAddr = 0;
 	int fd = -1;
 	int ret = -1;
-	unsigned long hwid = 0;
 	unsigned int pid = 0;
 	unsigned int current_fw_ver = 0;
 	int tech = TECH_EMR;
@@ -815,8 +834,10 @@ int main(int argc, char *argv[])
 	bool active_fw_check = false;
 	bool force_flash = false;
 	bool pid_check = false;
+#ifdef HWID_SUPPORT
+	unsigned long hwid = 0;
 	bool hwid_check = false;
-
+#endif
 	FILE *fp;
 	UBL_STATUS *pUBLStatus = NULL;
 	UBL_PROCESS *pUBLProcess = NULL;
@@ -824,7 +845,7 @@ int main(int argc, char *argv[])
 	if (argc != 4){
 		fprintf(stderr,  "%s %s\n", PROGRAM_NAME, VERSION_STRING);
 		fprintf(stderr,  "Usage: $%s [firmware filename] [type] [i2c-device path]\n", PROGRAM_NAME);
-		fprintf(stderr,  "Ex: $%s W9013_056.hex -a i2c-1 \n", PROGRAM_NAME);
+		fprintf(stderr,  "Ex: $%s W9017_492E_0012.hex -a i2c-1 \n", PROGRAM_NAME);
 		ret = -EXIT_NOFILE;
 		goto exit;
 	}
@@ -835,10 +856,14 @@ int main(int argc, char *argv[])
 	} else if (!strcmp(argv[2], "-p")) {
 		fprintf(stderr,  "Returning PID only\n");
 		pid_check = true;
-	} else if (!strcmp(argv[2], "-h")) {
+	}
+#ifdef HWID_SUPPORT
+    else if (!strcmp(argv[2], "-h")) {
 		fprintf(stderr,  "Returning HWID only\n");
 		hwid_check = true;
-	} else if (!strcmp(argv[2], FLAGS_RECOVERY_TRUE)) {
+	}
+#endif
+    else if (!strcmp(argv[2], FLAGS_RECOVERY_TRUE)) {
 		force_flash = true;
 	} else if (!strcmp(argv[2], FLAGS_RECOVERY_FALSE)) {
 		fprintf(stderr,  "Force flash is NOT set\n");
@@ -867,26 +892,22 @@ int main(int argc, char *argv[])
 		ret = 0;
 		printf("%04x\n", pid); // in hex digit, for ex: 4877 means 0x4877
 		goto exit;
-	} else if (hwid_check) { // Feb/13/2018, Martin. This should only works for AES
+	} 
+#ifdef HWID_SUPPORT
+    else if (hwid_check) { // Feb/13/2018, Martin. This should only works for AES
 		if (tech == TECH_AES) {
-	#ifdef WACOM_DEBUG_LV1
-			fprintf(stderr,  "Check HWID start......\n");
-	#endif
 			ret = wacom_get_hwid(fd, pid, &hwid);
-	#ifdef WACOM_DEBUG_LV1
-			fprintf(stderr,  "Check HWID end......\n");
-	#endif
 		}
-		// EMR not support HWID now, just leave it 0 
+		// EMR not support HWID now, just leave it 0, and return value is -1
 		printf("%04x_%04x\n", (unsigned int)((hwid&0xFFFF0000)>>16), (unsigned int)(hwid&0x0000FFFF));
 		goto exit;
 	} 
-
+#endif
 #ifdef WACOM_DEBUG_LV1
 	fprintf(stderr, "%s current_fw: 0x%x \n", __func__, current_fw_ver);
 #endif
+#endif //I2C_OPEN
 
-#endif
 	if (tech == TECH_EMR) {
 		data_size = DATA_SIZE;
 	}  else {
@@ -917,7 +938,7 @@ int main(int argc, char *argv[])
 		goto err;
 	}
 
-	ret = read_hex(fp, data, data_size, &maxAddr, pUBLProcess, pUBLStatus, tech);
+	ret = read_hex(fp, data, data_size, &maxAddr, pUBLProcess, tech);
 	if (ret == HEX_READ_ERR) {
 		fprintf(stderr, "reading the hex file failed\n");
 		fclose(fp);
