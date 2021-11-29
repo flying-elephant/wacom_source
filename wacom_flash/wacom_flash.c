@@ -1,13 +1,16 @@
 /* Wacom I2C Firmware Flash Program*/
-/* Copyright (c) 2013-2018 Tatsunosuke Tobita, Wacom. */
+/* Copyright (c) 2013-2021 Tatsunosuke Tobita, Wacom. */
 /* Copyright (c) 2017-2019 Martin Chen, Wacom. */
 //
 #include "wacom_flash.h"
 #define PROGRAM_NAME "wacom_flash"
-#define VERSION_STRING "version 1.3.0"
+#define VERSION_STRING "version 1.4.0"
 
 //
 // Release Note of Wacom_flash
+//
+// v1.4.0   2021/Sep/xx     (1) EMR W9021 flash compatibility added
+//                              
 //
 // v1.3.0   2019/Sep/26     (1) Write the first sector after other sectors wrote OK, 
 //                              Reduce possibility of broken firmware issue by interrupt write flash process
@@ -179,7 +182,7 @@ int wacom_flash_cmd(int fd)
 	return 0;
 }
 
-int flash_query_w9013(int fd)
+int flash_query_emr(int fd)
 {
 	bool bRet = false;
 	u8 command[CMD_SIZE];
@@ -216,7 +219,7 @@ int flash_query_w9013(int fd)
 	return 0;
 }
 
-bool flash_blver_w9013(int fd, int *blver)
+bool flash_blver_emr(int fd, int *blver)
 {
 	bool bRet = false;
 	u8 command[CMD_SIZE];
@@ -250,7 +253,7 @@ bool flash_blver_w9013(int fd, int *blver)
 	return true;
 }
 
-bool flash_mputype_w9013(int fd, int* pMpuType)
+bool flash_mputype_emr(int fd, int* pMpuType)
 {
 	bool bRet = false;
 	u8 command[CMD_SIZE];
@@ -283,7 +286,7 @@ bool flash_mputype_w9013(int fd, int* pMpuType)
 	return true;
 }
 
-bool flash_end_w9013(int fd)
+bool flash_end_emr(int fd)
 {
 	bool bRet = false;
 	u8 command[CMD_SIZE];
@@ -422,46 +425,146 @@ bool flash_erase_w9013(int fd, int *eraseBlock, int num)
 
 	return true;
 }
+
+int check_progress(u8 *data, size_t size, u8 cmd, u8 ech)
+{
+	if (data[0] != cmd || data[1] != ech) {
+		fprintf(stderr, "%s failed to erase \n", __func__);
+		return -EXIT_FAIL;
+	}
+
+	switch (data[2]) {
+	case PROCESS_CHKSUM1_ERR:
+	case PROCESS_CHKSUM2_ERR:
+	case PROCESS_TIMEOUT_ERR:
+		fprintf(stderr, "%s error: %x \n", __func__, data[2]);
+		return -EXIT_FAIL;
+	}
+
+	return data[2];
+}
+
+/*-----------------------------------------------------*/
+/*--------------------- For W9021      ----------------*/
+/*-----------------------------------------------------*/
+bool flash_erase_w9021(int fd)
+{
+	bool bRet = false;
+	u8 command[BOOT_CMD_SIZE] = {0};
+	u8 response[BOOT_RSP_SIZE] = {0};
+	int i = 0, len = 0;
+	int ECH = 0, sum = 0;
+	int ret = -1;
+
+	command[len++] = 7;
+	command[len++] = ERS_ALL_CMD;
+	command[len++] = ECH = 2;
+	command[len++] = ERS_ECH2;
+
+	//Preliminarily stored data that cannnot appear here, but in wacom_set_feature()
+	sum += 0x05;
+	sum += 0x07;
+	for (i = 0; i < len; i++)
+		sum += command[i];
+
+	command[len++] = ~sum + 1;
+
+	bRet = wacom_i2c_set_feature(fd, REPORT_ID_1, len, command, COMM_REG, DATA_REG);
+	if (!bRet) {
+		fprintf(stderr, "%s failed to set feature \n", __func__);
+		return bRet;
+	}	
+
+	do {
+		bRet = wacom_i2c_get_feature(fd, REPORT_ID_2, BOOT_RSP_SIZE, response, 
+					     COMM_REG, DATA_REG, EMR_I2C_ADDR);
+		if (!bRet) {
+			fprintf(stderr, "%s failed to set feature \n", __func__);
+			return bRet;
+		}
+		
+		if ((ret = check_progress(&response[1], (BOOT_RSP_SIZE - 3), ERS_ALL_CMD, ECH)) < 0)
+			return false;
+	} while(ret == PROCESS_INPROGRESS);
+
+	return true;
+}
+
+bool flash_erase_emr(int fd, int *eraseBlock, int num, int mpu_type)
+{
+	bool bRet = false;
+
+	switch (mpu_type) {
+	case MPU_W9013:
+		bRet = flash_erase_w9013(fd, eraseBlock, num);
+		break;
+
+	case MPU_W9021:
+		bRet = flash_erase_w9021(fd);
+		break;
+
+	default:
+		/* If no MPU is matched, just return "false" */
+		break;
+		
+	}
+
+	return bRet;
+}
+
 /*--------------------------------------------erase--------------------------------------------------------------------------*/
 
-bool flash_write_block_w9013(int fd, char *flash_data, 
-				    unsigned long ulAddress, u8 *pcommand_id, int *ECH)
+
+
+/*-------------------------------------------- write & verify -----------------------------------------------------------------------*/
+bool flash_write_block_emr(int fd, char *flash_data, 
+			   unsigned long ulAddress, u8 *pcommand_id, int *ECH, int mpu_type, unsigned int block_size)
 {
-	const int MAX_COM_SIZE = (8 + FLASH_BLOCK_SIZE + 2);  //8: num of command[0] to command[7]
+	const int MAX_COM_SIZE = (8 + block_size + 2);  //8: num of command[0] to command[7]
                                                               //FLASH_BLOCK_SIZE: unit to erase the block
                                                               //Num of Last 2 checksums
 	bool bRet = false;
-	u8 command[300];
+	u8 command[300] = {0};
+        int boot_cmd_size = (mpu_type == MPU_W9013) ? BOOT_CMD_SIZE : BOOT_CMD_SIZE_W9021;
 	unsigned char sum = 0;
-	int i;
+	int i = 0;
 
 	command[0] = BOOT_CMD_REPORT_ID;	    /* Report:ReportID */
 	command[1] = BOOT_WRITE_FLASH;			/* Report:program  command */
 	command[2] = *ECH = ++(*pcommand_id);	/* Report:echo */
-	command[3] = ulAddress & 0x000000ff;
+	command[3] = ulAddress & 0x000000ff; 
 	command[4] = (ulAddress & 0x0000ff00) >> 8;
 	command[5] = (ulAddress & 0x00ff0000) >> 16;
 	command[6] = (ulAddress & 0xff000000) >> 24;	/* Report:address(4bytes) */
-	command[7] = 8;									/* Report:size(8*8=64) */
+	command[7] = (mpu_type == MPU_W9013) ? 0x08 : 0x20; /* If not W9013, that means W9021 this time*/
 
-	/*Preliminarily store the data that cannnot appear here, but in wacom_set_feature()*/	
+	/* Preliminarily store the data that cannnot appear here, but in wacom_set_feature() */	
 	sum = 0;
 	sum += 0x05;
-	sum += 0x4c;
+	sum += ((mpu_type == MPU_W9013) ? 0x4c : 0x0d); /* If not W9013, that means W9021 this time*/
+
+	
 	for (i = 0; i < 8; i++)
 		sum += command[i];
-	command[MAX_COM_SIZE - 2] = ~sum + 1;			/* Report:command checksum */
+	
+command[MAX_COM_SIZE - 2] = ~sum + 1;			/* Report:command checksum */
+#ifdef WACOM_DEBUG_LV1
+	fprintf(stderr, "addr 0x%x Checksum1: 0x%x \n", ulAddress, sum);
+#endif	
 	
 	sum = 0;
-	for (i = 8; i < (FLASH_BLOCK_SIZE + 8); i++){
-		command[i] = flash_data[ulAddress+(i - 8)];
+	for (i = 8; i < (block_size + 8); i++){
+		command[i] = flash_data[ulAddress + (i - 8)];
 		sum += flash_data[ulAddress+(i - 8)];
 	}
 
-	command[MAX_COM_SIZE - 1] = ~sum+1;				/* Report:data checksum */
-	
-	/*Subtract 8 for the first 8 bytes*/
-	bRet = wacom_i2c_set_feature(fd, REPORT_ID_1, (BOOT_CMD_SIZE + 4 - 8), command, COMM_REG, DATA_REG);
+command[MAX_COM_SIZE - 1] = ~sum + 1;				/* Report:data checksum */
+
+#ifdef WACOM_DEBUG_LV1
+	fprintf(stderr, "addr 0x%x Checksum2: 0x%x \n", ulAddress, sum);
+#endif		
+	/* Subtract 8 for the first 8 bytes*/
+	bRet = wacom_i2c_set_feature(fd, REPORT_ID_1, (boot_cmd_size + 4 - 8), command, COMM_REG, DATA_REG);
 	if (!bRet) {
 		fprintf(stderr, "%s failed to set feature \n", __func__);
 		return bRet;
@@ -469,31 +572,32 @@ bool flash_write_block_w9013(int fd, char *flash_data,
 
 	usleep(50);
 
-	return true;
+	return bRet;
 }
 
-bool flash_write_w9013(int fd, char *flash_data,
-			      unsigned long start_address, unsigned long *max_address)
+bool flash_write_emr(int fd, char *flash_data,
+		     unsigned long start_address, unsigned long *max_address, int mpu_type, unsigned int block_size)
 {
 	bool bRet = false;
 	u8 command_id = 0;
-	u8 response[BOOT_RSP_SIZE];
+	u8 response[BOOT_RSP_SIZE] = {0};
 	int i, j, ECH = 0, ECH_len = 0;
-	int ECH_ARRAY[3];
-	unsigned long ulAddress;
+	int ECH_ARRAY[3] = {0};
+	unsigned long ulAddress = 0;
+	int ret = -1;
 
 	j = 0;
-	for (ulAddress = start_address; ulAddress < *max_address; ulAddress += FLASH_BLOCK_SIZE) {
-		for (i = 0; i < FLASH_BLOCK_SIZE; i++) {
+	for (ulAddress = start_address; ulAddress < *max_address; ulAddress += block_size) {
+		for (i = 0; i < block_size; i++) {
 			if ((u8)(flash_data[ulAddress+i]) != 0xFF)
 				break;
 		}
-		if (i == (FLASH_BLOCK_SIZE))
+		if (i == (block_size))
 			continue;
 
-		bRet = flash_write_block_w9013(fd, flash_data, ulAddress, &command_id, &ECH);
+		bRet = flash_write_block_emr(fd, flash_data, ulAddress, &command_id, &ECH, mpu_type, block_size);
 		if(!bRet)
-			return false;
+			return bRet;
 		if (ECH_len == 3)
 			ECH_len = 0;
 
@@ -507,21 +611,35 @@ bool flash_write_w9013(int fd, char *flash_data,
 						fprintf(stderr, "%s failed to set feature \n", __func__);
 						return bRet;
 					}
-					
-					if ( (response[RTRN_CMD] != 0x01 || response[RTRN_ECH] != ECH_ARRAY[j]) ) {
-						fprintf(stderr, "addr: %x res:%x \n", (unsigned int)ulAddress, response[RTRN_RSP]);
+
+					ret = check_progress(&response[1], (BOOT_RSP_SIZE - 3), 0x01, ECH_ARRAY[j]);
+					if (ret < 0) {
+						fprintf(stderr, "addr: 0x%x res1:0x%x res2:0x%x res3:0x%x \n",
+							(unsigned int)ulAddress, response[RTRN_CMD], response[RTRN_ECH], response[RTRN_RSP]);
 						return false;
 					}
-					// Dec/05/2018, v1.2.7, Martin, Confirmed response[RTRN_RSP] only equal 0xff or 0x00		
-				} while (response[RTRN_CMD] == 0x01 && response[RTRN_ECH] == ECH_ARRAY[j] && response[RTRN_RSP] == 0xff);
+				} while (ret == PROCESS_INPROGRESS);
 			}
 		}
 	}
-	
-	return true;
+
+return true;
 }
 
-int wacom_i2c_flash_w9013(int fd, char *flash_data)
+
+/*-------------------------------------------- write & verify -----------------------------------------------------------------------*/
+
+
+
+
+/***********************************************/
+/***********************************************/
+/* flash_cmd, flash_query, flash_blver, and    */
+/* flash_mputype can be commonly used between  */
+/* W9013 and W9021.                            */
+/***********************************************/
+/***********************************************/
+int wacom_i2c_flash_emr(int fd, char *flash_data)
 {
 	bool bRet = false;
 	int result, i;
@@ -530,9 +648,11 @@ int wacom_i2c_flash_w9013(int fd, char *flash_data)
 	int iBLVer = 0, iMpuType = 0;
 	unsigned long max_address = 0;			/* Max.address of Load data */
 	unsigned long start_address = 0x2000;	/* Start.address of Load data */
+	unsigned int block_num = 0;
+	unsigned int block_size = 0;
 
 	/*Obtain boot loader version*/
-	if (!flash_blver_w9013(fd, &iBLVer)) {
+	if (!flash_blver_emr(fd, &iBLVer)) {
 		fprintf(stderr, "%s failed to get Boot Loader version \n", __func__);
 		return -EXIT_FAIL_GET_BOOT_LOADER_VERSION;
 	}
@@ -542,49 +662,87 @@ int wacom_i2c_flash_w9013(int fd, char *flash_data)
 #endif
 
 	/*Obtain MPU type: this can be manually done in user space*/
-	if (!flash_mputype_w9013(fd, &iMpuType)) {
+	if (!flash_mputype_emr(fd, &iMpuType)) {
 		fprintf(stderr, "%s failed to get MPU type \n", __func__);
 		return -EXIT_FAIL_GET_MPU_TYPE;
 	}
-	if (iMpuType != MPU_W9013) {
-		fprintf(stderr, "MPU is not for W9013 : 0x%x \n", iMpuType);
+	if (iMpuType != MPU_W9013 && iMpuType != MPU_W9021) {
+		fprintf(stderr, "MPU is not for W9013 / W9021 : 0x%x \n", iMpuType);
 		return -EXIT_FAIL_GET_MPU_TYPE;
 	}
 
 #ifdef WACOM_DEBUG_LV1
-	fprintf(stderr, "MPU type: 0x%x \n", iMpuType);	
+	fprintf(stderr, "MPU num: 0x%x \n", iMpuType);
+	fprintf(stderr, "MPU type: %s \n", (iMpuType == MPU_W9013) ? "W9013" : "W9021");
 #endif	
 	/*-----------------------------------*/
 	/*Flashing operation starts from here*/
 
 	/*Set start and end address and block numbers*/
 	eraseBlockNum = 0;
-	start_address = W9013_START_ADDR;
-	max_address = W9013_END_ADDR;
-	for (i = BLOCK_NUM; i >= 8; i--) {
-		eraseBlock[eraseBlockNum] = i;
-		eraseBlockNum++;
-	}	
 
- retry:
-	msleep(300);
+	switch (iMpuType) {
+	case MPU_W9013:
+		start_address = W9013_START_ADDR;
+		max_address = W9013_END_ADDR;
+		block_num = BLOCK_NUM;
+		block_size = FLASH_BLOCK_SIZE;
 
-	/*Erase the old program*/
-#ifdef WACOM_DEBUG_LV1
-	fprintf(stderr, "%s erasing the current firmware \n", __func__);
-#endif
-	bRet = flash_erase_w9013(fd, eraseBlock,  eraseBlockNum);
-	if (!bRet) {
-		fprintf(stderr, "%s failed to erase the user program \n", __func__);
-		result = -EXIT_FAIL_ERASE;
-		goto fail;
+		for (i = block_num; i >= 8; i--) {
+			eraseBlock[eraseBlockNum] = i;
+			eraseBlockNum++;
+		}	
+
+		break;
+
+	case MPU_W9021:
+	default:
+		start_address = W9021_START_ADDR;
+		max_address = W9021_END_ADDR;
+		block_num = BLOCK_NUM_W9021;
+		block_size = FLASH_BLOCK_SIZE_W9021;
+		break;
+		
 	}
 
+ retry:
+
+
+
+
+
+
+
+
+
+	
+	/*Erase the old program*/
+
+	/********* Note *********************/
+	/* eraseBlock and eraseBlockNum are */
+	/* required for only W9013          */
+	/************************************/
+	if (!erased) {
+#ifdef WACOM_DEBUG_LV1
+		fprintf(stderr, "%s erasing the current firmware \n", __func__);
+#endif
+	
+		bRet = flash_erase_emr(fd, eraseBlock,  eraseBlockNum, iMpuType);
+		if (!bRet) {
+			fprintf(stderr, "%s failed to erase the user program \n", __func__);
+			result = -EXIT_FAIL_ERASE;
+			goto fail;
+		}
+	}
+
+	erased = true;
+	
 	/*Write the new program*/
 #ifdef WACOM_DEBUG_LV1
 	fprintf(stderr, "%s writing new firmware \n", __func__);
 #endif
-	bRet = flash_write_w9013(fd, flash_data, start_address, &max_address);
+	
+	bRet = flash_write_emr(fd, flash_data, start_address, &max_address, iMpuType, block_size);
 	if (!bRet) {
 		fprintf(stderr, "%s failed to write firmware \n", __func__);
 		result = -EXIT_FAIL_WRITE_FIRMWARE;
@@ -595,7 +753,7 @@ int wacom_i2c_flash_w9013(int fd, char *flash_data)
 #ifdef WACOM_DEBUG_LV1
 	fprintf(stderr, "%s closing the boot mode \n", __func__);
 #endif
-	bRet = flash_end_w9013(fd);
+	bRet = flash_end_emr(fd);
 	if (!bRet) {
 		fprintf(stderr, "%s closing boot mode failed  \n", __func__);
 		result = -EXIT_FAIL_EXIT_FLASH_MODE;
@@ -610,8 +768,9 @@ int wacom_i2c_flash_w9013(int fd, char *flash_data)
  fail:
 	if (result != -EXIT_FAIL_EXIT_FLASH_MODE && result < 0 
 	    && retry_cnt < NUM_OF_RETRY) {
-		fprintf(stderr, "Flash failed; retrying...; count: %d\n", (retry_cnt + 1));
+		fprintf(stderr, "Flash failed; retrying...; count: %d\n\n\n", (retry_cnt + 1));
 		retry_cnt++;
+		msleep(300);
 		goto retry;
 	}
 
@@ -627,13 +786,13 @@ int wacom_i2c_flash(int fd, char *flash_data)
 		fprintf(stderr, "%s cannot send flash command \n", __func__);
 	}
 
-	ret = flash_query_w9013(fd);
+	ret = flash_query_emr(fd);
 	if(ret < 0) {
 		fprintf(stderr, "%s Error: cannot send query \n", __func__);
 		return -EXIT_FAIL;
 	}
 	
-	ret = wacom_i2c_flash_w9013(fd, flash_data);
+	ret = wacom_i2c_flash_emr(fd, flash_data);
 	if (ret < 0) {
 		fprintf(stderr, "%s Error: flash failed \n", __func__);
 		return -EXIT_FAIL;
@@ -930,7 +1089,7 @@ int main(int argc, char *argv[])
 
 #ifdef FILE_READ
 #ifdef WACOM_DEBUG_LV1
-	fprintf(stderr, "Reading hex file: %s... \n", argv[1]);
+	fprintf(stderr, "Reading hex file: %s \n", argv[1]);
 #endif
 	fp = fopen(argv[1], "rb");  /* FW_LINK_PATH */
 	if (fp == NULL) {

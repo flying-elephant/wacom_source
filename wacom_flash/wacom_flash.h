@@ -115,8 +115,11 @@ u32 g_ErrorCode;
 #define EMR_I2C_ADDR            0x09
 #define WACOM_CMD_QUERY         0x03
 #define WACOM_QUERY_SIZE        19
-#define DATA_SIZE               (65536 * 2)	// W9021 5*64K, W9013 2*64K
+#define DATA_SIZE               (65536 * 5)	// W9021 5*64K, W9013 2*64K
 
+/*---------------------------------*/
+/*----- W9013 IC              -----*/
+/*---------------------------------*/
 #define MPU_W9013               0x2e
 #define EMR_UBL_PID			    0x012B
 
@@ -127,6 +130,28 @@ u32 g_ErrorCode;
 #define BLOCK_NUM               127
 #define W9013_START_ADDR        0x2000
 #define W9013_END_ADDR          0x1ffff
+
+/*---------------------------------*/
+/*----- W9021 IC              -----*/
+/*---------------------------------*/
+#define MPU_W9021              0x45
+#define FLASH_BLOCK_SIZE_W9021 256
+#define DATA_SIZE_W9021        (65536 * 5)
+#define BLOCK_NUM_W9021        63
+#define W9021_START_ADDR       0x3000
+#define W9021_END_ADDR         0x3efff
+
+#define BOOT_CMD_SIZE_W9021   (0x010c + 0x02)
+
+
+#define ERS_ALL_CMD           0x10
+#define ERS_ECH2              0x03
+
+#define PROCESS_INPROGRESS    0xff
+#define PROCESS_COMPLETED     0x00
+#define PROCESS_CHKSUM1_ERR   0x81
+#define PROCESS_CHKSUM2_ERR   0x82
+#define PROCESS_TIMEOUT_ERR   0x87
 
 
 /*----------------------------------*/
@@ -141,15 +166,15 @@ u32 g_ErrorCode;
 #define BOOT_QUERY_SIZE         5
 
 #define FLASH_CMD_REPORT_ID     2
-#define BOOT_CMD_REPORT_ID	    7
+#define BOOT_CMD_REPORT_ID	7
 
 #define BOOT_ERASE_DATAMEM      0x0e
-#define BOOT_ERASE_FLASH	    0
-#define BOOT_WRITE_FLASH	    1
-#define BOOT_EXIT		        3
-#define BOOT_BLVER		        4
-#define BOOT_MPU		        5
-#define BOOT_QUERY		        7
+#define BOOT_ERASE_FLASH	0
+#define BOOT_WRITE_FLASH	1
+#define BOOT_EXIT		3
+#define BOOT_BLVER		4
+#define BOOT_MPU		5
+#define BOOT_QUERY	        7
 
 #define QUERY_CMD               0x07
 #define BOOT_CMD                0x04
@@ -176,60 +201,9 @@ u32 g_ErrorCode;
 #define HEX_READ_ERR            -1
 #define ASCII_EOF               0x1A
 #define ACK			            0
-//
-// exit codes
-//
-#define EXIT_OK					        (0)
-#define EXIT_REBOOT				        (1)
-#define EXIT_FAIL				        (2)
-#define EXIT_USAGE				        (3)
-#define EXIT_NO_SUCH_FILE			    (4)
-#define EXIT_NO_INTEL_HEX			    (5)
-#define EXIT_FAIL_OPEN_COM_PORT			(6)
-#define EXIT_FAIL_ENTER_FLASH_MODE		(7)
-#define EXIT_FAIL_FLASH_QUERY			(8)
-#define EXIT_FAIL_BAUDRATE_CHANGE		(9)
-#define EXIT_FAIL_WRITE_FIRMWARE		(10)
-#define EXIT_FAIL_EXIT_FLASH_MODE		(11)
-#define EXIT_CANCEL_UPDATE			    (12)
-#define EXIT_SUCCESS_UPDATE			    (13)
-#define EXIT_FAIL_HID2SERIAL			(14)
-#define EXIT_FAIL_VERIFY_FIRMWARE		(15)
-#define EXIT_FAIL_MAKE_WRITING_MARK		(16)
-#define EXIT_FAIL_ERASE_WRITING_MARK    (17)
-#define EXIT_FAIL_READ_WRITING_MARK		(18)
-#define EXIT_EXIST_MARKING			    (19)
-#define EXIT_FAIL_MISMATCHING			(20)
-#define EXIT_FAIL_ERASE				    (21)
-#define EXIT_FAIL_GET_BOOT_LOADER_VERSION	(22)
-#define EXIT_FAIL_GET_MPU_TYPE			(23)
-#define EXIT_MISMATCH_BOOTLOADER		(24)
-#define EXIT_MISMATCH_MPUTYPE			(25)
-#define EXIT_FAIL_ERASE_BOOT			(26)
-#define EXIT_FAIL_WRITE_BOOTLOADER		(27)
-#define EXIT_FAIL_SWAP_BOOT			    (28)
-#define EXIT_FAIL_WRITE_DATA			(29)
-#define EXIT_FAIL_GET_FIRMWARE_VERSION	(30)
-#define EXIT_FAIL_GET_UNIT_ID			(31)
-#define EXIT_FAIL_SEND_STOP_COMMAND		(32)
-#define EXIT_FAIL_SEND_QUERY_COMMAND	(33)
-#define EXIT_NOT_FILE_FOR_535			(34)
-#define EXIT_NOT_FILE_FOR_514			(35)
-#define EXIT_NOT_FILE_FOR_503			(36)
-#define EXIT_MISMATCH_MPU_TYPE			(37)
-#define EXIT_NOT_FILE_FOR_515			(38)
-#define EXIT_NOT_FILE_FOR_1024			(39)
-#define EXIT_FAIL_VERIFY_WRITING_MARK	(40)
-#define EXIT_DEVICE_NOT_FOUND			(41)
-#define EXIT_FAIL_WRITING_MARK_NOT_SET	(42)
-#define EXIT_FAIL_SET_PDCT              (43)
-#define ERR                             (44)
-#define ERR_WRITE                       (45)
-#define EXIT_FAIL_FWCMP                 (46)
-#define EXIT_VERSION_CHECK              (47)
-#define EXIT_NOFILE                     (48)
-#define EXIT_NOSUCH_OPTION              (49)
-#define EXIT_FAIL_READLINK              (50)
+
+
+
 
 /*---------------------------------------*/
 /*---------------------------------------*/
@@ -466,6 +440,7 @@ typedef union
 } boot_rsp;
 #pragma pack(pop)
 
+bool erased;
 bool wacom_i2c_set_feature(int fd, u8 report_id, unsigned int buf_size, u8 *data, 
 			   u16 cmdreg, u16 datareg);
 bool wacom_i2c_get_feature(int fd, u8 report_id, unsigned int buf_size, u8 *data, 
@@ -474,4 +449,61 @@ int read_hex(FILE *fp, char *flash_data, size_t data_size, unsigned long *max_ad
 	     UBL_PROCESS *pUBLProcess, int tech);
 int wacom_flash_aes(int fd, char *data, UBL_STATUS *pUBLStatus, UBL_PROCESS *pUBL_PROCESS);
 int wacom_get_hwid(int fd, unsigned int pid, unsigned long *hwid);
+
+
+//
+// exit codes
+//
+#define EXIT_OK					        (0)
+#define EXIT_REBOOT				        (1)
+#define EXIT_FAIL				        (2)
+#define EXIT_USAGE				        (3)
+#define EXIT_NO_SUCH_FILE			    (4)
+#define EXIT_NO_INTEL_HEX			    (5)
+#define EXIT_FAIL_OPEN_COM_PORT			(6)
+#define EXIT_FAIL_ENTER_FLASH_MODE		(7)
+#define EXIT_FAIL_FLASH_QUERY			(8)
+#define EXIT_FAIL_BAUDRATE_CHANGE		(9)
+#define EXIT_FAIL_WRITE_FIRMWARE		(10)
+#define EXIT_FAIL_EXIT_FLASH_MODE		(11)
+#define EXIT_CANCEL_UPDATE			    (12)
+#define EXIT_SUCCESS_UPDATE			    (13)
+#define EXIT_FAIL_HID2SERIAL			(14)
+#define EXIT_FAIL_VERIFY_FIRMWARE		(15)
+#define EXIT_FAIL_MAKE_WRITING_MARK		(16)
+#define EXIT_FAIL_ERASE_WRITING_MARK    (17)
+#define EXIT_FAIL_READ_WRITING_MARK		(18)
+#define EXIT_EXIST_MARKING			    (19)
+#define EXIT_FAIL_MISMATCHING			(20)
+#define EXIT_FAIL_ERASE				    (21)
+#define EXIT_FAIL_GET_BOOT_LOADER_VERSION	(22)
+#define EXIT_FAIL_GET_MPU_TYPE			(23)
+#define EXIT_MISMATCH_BOOTLOADER		(24)
+#define EXIT_MISMATCH_MPUTYPE			(25)
+#define EXIT_FAIL_ERASE_BOOT			(26)
+#define EXIT_FAIL_WRITE_BOOTLOADER		(27)
+#define EXIT_FAIL_SWAP_BOOT			    (28)
+#define EXIT_FAIL_WRITE_DATA			(29)
+#define EXIT_FAIL_GET_FIRMWARE_VERSION	(30)
+#define EXIT_FAIL_GET_UNIT_ID			(31)
+#define EXIT_FAIL_SEND_STOP_COMMAND		(32)
+#define EXIT_FAIL_SEND_QUERY_COMMAND	(33)
+#define EXIT_NOT_FILE_FOR_535			(34)
+#define EXIT_NOT_FILE_FOR_514			(35)
+#define EXIT_NOT_FILE_FOR_503			(36)
+#define EXIT_MISMATCH_MPU_TYPE			(37)
+#define EXIT_NOT_FILE_FOR_515			(38)
+#define EXIT_NOT_FILE_FOR_1024			(39)
+#define EXIT_FAIL_VERIFY_WRITING_MARK	(40)
+#define EXIT_DEVICE_NOT_FOUND			(41)
+#define EXIT_FAIL_WRITING_MARK_NOT_SET	(42)
+#define EXIT_FAIL_SET_PDCT              (43)
+#define ERR                             (44)
+#define ERR_WRITE                       (45)
+#define EXIT_FAIL_FWCMP                 (46)
+#define EXIT_VERSION_CHECK              (47)
+#define EXIT_NOFILE                     (48)
+#define EXIT_NOSUCH_OPTION              (49)
+#define EXIT_FAIL_READLINK              (50)
+
 #endif
